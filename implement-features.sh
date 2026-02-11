@@ -7,6 +7,10 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JSON_FILE="$SCRIPT_DIR/to-support.json"
+LOG_DIR="$SCRIPT_DIR/scripts/logs"
+
+# Ensure log directory exists
+mkdir -p "$LOG_DIR"
 
 DRY_RUN=false
 if [[ "$1" == "--dry-run" ]]; then
@@ -83,12 +87,14 @@ Feature ID: $feature_id
 Description: $feature_desc
 
 Instructions:
-1. Read the existing code in src/server/msg-to-eml.ts to understand the current implementation
+1. Read the existing code in src/server/ to understand the current implementation
 2. Implement the feature described above
-3. Add or update tests in src/server/msg-to-eml.test.ts to cover the new functionality
-4. Run 'npm test' to verify all tests pass
-5. If tests pass, commit with message: 'feat($feature_id): <brief description>'
-6. If you need to install new dependencies, use 'npm install <package> --save'
+3. Add or update tests in src/server/**/*.test.ts to cover the new functionality
+4. Add or update integration tests, if it makes sense to test using a new file. If so, add a testFiles entry in the feature object in to-support.json with the path to the new test file (e.g. 'testFiles': ['src/server/__tests__/new-feature.test.eml'])
+5. Run 'npm test' to verify all tests pass
+6. If tests pass, commit with message: 'feat($feature_id): <brief description>'
+7. If you need to install new dependencies, use 'npm install <package> --save'
+8. Run linting and formatting: 'npm run lint' and 'npm run format'
 
 Do not deploy. Just implement, test, and commit."
 
@@ -102,14 +108,22 @@ Do not deploy. Just implement, test, and commit."
     echo "Calling Claude to implement feature..."
     echo ""
 
+    # Set up log file with timestamp
+    timestamp=$(date +"%Y%m%d_%H%M%S")
+    log_file="$LOG_DIR/${feature_id}_${timestamp}.log"
+    echo "Logging to: $log_file"
+    echo ""
+
     # Run claude with permissions for this project
-    if claude --dangerously-skip-permissions -p "$prompt"; then
+    # Use script for unbuffered output capture (works on macOS)
+    if script -q "$log_file" claude --dangerously-skip-permissions -p "$prompt"; then
       echo ""
       echo "Claude completed work on '$feature_id'"
     else
       echo ""
       echo "Warning: Claude exited with non-zero status for '$feature_id'"
       echo "Check the implementation manually before continuing."
+      echo "Log file: $log_file"
       echo "Press Enter to mark as implemented anyway, or Ctrl+C to exit"
       read
     fi
