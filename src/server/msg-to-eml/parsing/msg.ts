@@ -19,6 +19,7 @@ import {
   PidTagReplyRecipientNames,
   PidTagRtfCompressed,
   PidTagSubject,
+  PidTagTransportMessageHeaders,
 } from "msg-parser";
 import { isCalendarMessage, parseAttendeeString } from "../calendar/index.js";
 import { mapToXPriority } from "../mime/index.js";
@@ -95,6 +96,12 @@ export function parseMsgFromMsg(msg: Msg, msgToEmlFromMsg: (msg: Msg) => string)
   // If delivery receipt is requested, use sender's email for Return-Receipt-To header
   if (deliveryReceiptRequested && senderEmail) {
     headers.returnReceiptTo = senderEmail;
+  }
+
+  // Extract original transport headers (Received, DKIM-Signature, SPF, Authentication-Results, etc.)
+  const transportMessageHeaders = msg.getProperty<string>(PidTagTransportMessageHeaders);
+  if (transportMessageHeaders) {
+    headers.transportMessageHeaders = transportMessageHeaders;
   }
 
   // Check if this is a calendar appointment

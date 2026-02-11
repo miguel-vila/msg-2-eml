@@ -20,6 +20,7 @@ export interface MessageHeaders {
   priority?: number; // 1-5 scale (1=highest, 5=lowest)
   dispositionNotificationTo?: string; // For read receipt requests
   returnReceiptTo?: string; // For delivery receipt requests
+  transportMessageHeaders?: string; // Original transport headers (Received, DKIM, SPF, etc.)
 }
 
 export interface CalendarEvent {

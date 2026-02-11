@@ -1129,3 +1129,256 @@ describe("convertToEml with read and delivery receipt headers", () => {
     );
   });
 });
+
+describe("convertToEml with transport message headers", () => {
+  it("should include Received headers from transport headers", () => {
+    const transportHeaders = `Received: from mail.example.com by mx.example.org with SMTP id abc123; Mon, 15 Jan 2024 10:30:00 +0000\r
+Received: from localhost by mail.example.com with ESMTP id def456; Mon, 15 Jan 2024 10:29:59 +0000\r
+From: sender@example.com\r
+To: recipient@example.com\r
+Subject: Test`;
+
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        transportMessageHeaders: transportHeaders,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Received: from mail.example.com"), "Should include first Received header");
+    assert.ok(eml.includes("Received: from localhost"), "Should include second Received header");
+  });
+
+  it("should include DKIM-Signature from transport headers", () => {
+    const transportHeaders = `DKIM-Signature: v=1; a=rsa-sha256; d=example.com; s=selector;\r
+\tc=relaxed/relaxed; q=dns/txt; h=from:to:subject:date;\r
+\tbh=abc123=; b=xyz789=\r
+From: sender@example.com`;
+
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        transportMessageHeaders: transportHeaders,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("DKIM-Signature: v=1; a=rsa-sha256"), "Should include DKIM-Signature header");
+    assert.ok(eml.includes("c=relaxed/relaxed"), "Should preserve folded DKIM header content");
+  });
+
+  it("should include Authentication-Results from transport headers", () => {
+    const transportHeaders = `Authentication-Results: mx.example.com;\r
+\tdkim=pass header.d=example.com;\r
+\tspf=pass smtp.mailfrom=sender@example.com\r
+From: sender@example.com`;
+
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        transportMessageHeaders: transportHeaders,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Authentication-Results: mx.example.com"), "Should include Authentication-Results header");
+    assert.ok(eml.includes("dkim=pass"), "Should preserve authentication result details");
+  });
+
+  it("should include X-* headers from transport headers", () => {
+    const transportHeaders = `X-Spam-Status: No, score=-2.0\r
+X-Spam-Score: -2.0\r
+X-Originating-IP: [192.168.1.1]\r
+From: sender@example.com`;
+
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        transportMessageHeaders: transportHeaders,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("X-Spam-Status: No, score=-2.0"), "Should include X-Spam-Status header");
+    assert.ok(eml.includes("X-Spam-Score: -2.0"), "Should include X-Spam-Score header");
+    assert.ok(eml.includes("X-Originating-IP: [192.168.1.1]"), "Should include X-Originating-IP header");
+  });
+
+  it("should exclude headers that are already generated (From, To, Subject, etc.)", () => {
+    const transportHeaders = `Received: from mail.example.com by mx.example.org\r
+From: original-sender@example.com\r
+To: original-recipient@example.com\r
+Subject: Original Subject\r
+Date: Mon, 1 Jan 2024 00:00:00 +0000\r
+MIME-Version: 1.0\r
+Message-ID: <original@example.com>\r
+Content-Type: text/plain`;
+
+    const parsed = {
+      subject: "New Subject",
+      from: "new-sender@example.com",
+      recipients: [{ name: "", email: "new-recipient@example.com", type: "to" as const }],
+      date: new Date("2024-01-15T10:30:00Z"),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        messageId: "<new@example.com>",
+        transportMessageHeaders: transportHeaders,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should include Received (transport header we want to preserve)
+    assert.ok(eml.includes("Received: from mail.example.com"), "Should include Received header");
+
+    // Should use our generated headers, not the ones from transport
+    assert.ok(eml.includes("From: new-sender@example.com"), "Should use generated From header");
+    assert.ok(eml.includes("To: new-recipient@example.com"), "Should use generated To header");
+    assert.ok(eml.includes("Subject: New Subject"), "Should use generated Subject header");
+    assert.ok(eml.includes("Message-ID: <new@example.com>"), "Should use generated Message-ID header");
+
+    // Should NOT include duplicates from transport headers
+    assert.ok(!eml.includes("From: original-sender@example.com"), "Should not include original From");
+    assert.ok(!eml.includes("To: original-recipient@example.com"), "Should not include original To");
+    assert.ok(!eml.includes("Subject: Original Subject"), "Should not include original Subject");
+    assert.ok(!eml.includes("Message-ID: <original@example.com>"), "Should not include original Message-ID");
+  });
+
+  it("should place transport headers before Content-Type", () => {
+    const transportHeaders = `Received: from mail.example.com by mx.example.org\r
+Authentication-Results: mx.example.com; spf=pass`;
+
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        transportMessageHeaders: transportHeaders,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    const receivedIndex = eml.indexOf("Received:");
+    const authResultsIndex = eml.indexOf("Authentication-Results:");
+    const contentTypeIndex = eml.indexOf("Content-Type:");
+
+    assert.ok(receivedIndex > 0, "Should have Received header");
+    assert.ok(authResultsIndex > 0, "Should have Authentication-Results header");
+    assert.ok(receivedIndex < contentTypeIndex, "Received should come before Content-Type");
+    assert.ok(authResultsIndex < contentTypeIndex, "Authentication-Results should come before Content-Type");
+  });
+
+  it("should handle transport headers with LF line endings", () => {
+    const transportHeaders =
+      "Received: from mail.example.com by mx.example.org\nX-Custom: value\nFrom: sender@example.com";
+
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        transportMessageHeaders: transportHeaders,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Received: from mail.example.com"), "Should include Received header");
+    assert.ok(eml.includes("X-Custom: value"), "Should include X-Custom header");
+  });
+
+  it("should not include transport headers when not present", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        messageId: "<test@example.com>",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(!eml.includes("Received:"), "Should not have Received header when transport headers not present");
+    assert.ok(!eml.includes("Authentication-Results:"), "Should not have Authentication-Results when not present");
+  });
+
+  it("should preserve complete email provenance chain", () => {
+    const transportHeaders = `Received: from outgoing.example.com (192.168.1.100) by mx.destination.org with ESMTPS id abc123; Mon, 15 Jan 2024 10:30:00 +0000\r
+Received: from internal.example.com (10.0.0.50) by outgoing.example.com with ESMTP id def456; Mon, 15 Jan 2024 10:29:58 +0000\r
+Received: from sender-workstation.local (10.0.0.10) by internal.example.com with ESMTP id ghi789; Mon, 15 Jan 2024 10:29:55 +0000\r
+Authentication-Results: mx.destination.org;\r
+\tdkim=pass header.d=example.com header.s=selector header.b=abc123;\r
+\tspf=pass (mx.destination.org: domain of sender@example.com designates 192.168.1.100 as permitted sender) smtp.mailfrom=sender@example.com;\r
+\tdmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=example.com\r
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=example.com;\r
+\ts=selector; t=1705315795;\r
+\th=from:to:subject:date:message-id:mime-version:content-type;\r
+\tbh=47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=;\r
+\tb=XYZ789...=`;
+
+    const parsed = {
+      subject: "Important Email",
+      from: "sender@example.com",
+      recipients: [{ name: "Recipient", email: "recipient@destination.org", type: "to" as const }],
+      date: new Date("2024-01-15T10:30:00Z"),
+      body: "This email has complete provenance.",
+      attachments: [],
+      headers: {
+        transportMessageHeaders: transportHeaders,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Verify all three Received headers are present (complete routing chain)
+    const receivedMatches = eml.match(/Received:/g);
+    assert.strictEqual(receivedMatches?.length, 3, "Should have all three Received headers");
+
+    // Verify authentication chain
+    assert.ok(eml.includes("dkim=pass"), "Should include DKIM result");
+    assert.ok(eml.includes("spf=pass"), "Should include SPF result");
+    assert.ok(eml.includes("dmarc=pass"), "Should include DMARC result");
+
+    // Verify DKIM signature
+    assert.ok(eml.includes("DKIM-Signature: v=1"), "Should include DKIM-Signature");
+    assert.ok(eml.includes("a=rsa-sha256"), "Should preserve DKIM algorithm");
+    assert.ok(eml.includes("d=example.com"), "Should preserve DKIM domain");
+  });
+});
