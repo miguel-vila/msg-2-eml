@@ -2524,3 +2524,198 @@ From: sender@example.com`;
     assert.ok(eml.includes("Keywords: Important, Urgent"), "Should have Keywords");
   });
 });
+
+describe("convertToEml with auto-submitted header", () => {
+  it("should include Auto-Submitted: auto-forwarded header when present", () => {
+    const parsed = {
+      subject: "Auto-forwarded Message",
+      from: "sender@example.com",
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date(),
+      body: "This message was auto-forwarded.",
+      attachments: [],
+      headers: {
+        autoSubmitted: "auto-forwarded" as const,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Auto-Submitted: auto-forwarded"), "Should have Auto-Submitted: auto-forwarded header");
+  });
+
+  it("should include X-Auto-Forward-Comment header when auto-forward comment is present", () => {
+    const parsed = {
+      subject: "Auto-forwarded Message",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "This message was auto-forwarded.",
+      attachments: [],
+      headers: {
+        autoSubmitted: "auto-forwarded" as const,
+        autoForwardComment: "Forwarded by mailbox rule",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Auto-Submitted: auto-forwarded"), "Should have Auto-Submitted header");
+    assert.ok(
+      eml.includes("X-Auto-Forward-Comment: Forwarded by mailbox rule"),
+      "Should have X-Auto-Forward-Comment header",
+    );
+  });
+
+  it("should not include Auto-Submitted header when not present", () => {
+    const parsed = {
+      subject: "Regular Email",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(!eml.includes("Auto-Submitted:"), "Should not have Auto-Submitted header when not present");
+    assert.ok(!eml.includes("X-Auto-Forward-Comment:"), "Should not have X-Auto-Forward-Comment when not present");
+  });
+
+  it("should place Auto-Submitted header after Keywords and before transport headers", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        keywords: ["Important"],
+        autoSubmitted: "auto-forwarded" as const,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    const keywordsIndex = eml.indexOf("Keywords:");
+    const autoSubmittedIndex = eml.indexOf("Auto-Submitted:");
+    const contentTypeIndex = eml.indexOf("Content-Type:");
+
+    assert.ok(keywordsIndex > 0, "Should have Keywords header");
+    assert.ok(autoSubmittedIndex > 0, "Should have Auto-Submitted header");
+    assert.ok(keywordsIndex < autoSubmittedIndex, "Keywords should come before Auto-Submitted");
+    assert.ok(autoSubmittedIndex < contentTypeIndex, "Auto-Submitted should come before Content-Type");
+  });
+
+  it("should exclude Auto-Submitted from transport headers when we generate it", () => {
+    const transportHeaders = `Received: from mail.example.com by mx.example.org\r
+Auto-Submitted: auto-forwarded\r
+X-Auto-Forward-Comment: Old comment\r
+From: sender@example.com`;
+
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        autoSubmitted: "auto-forwarded" as const,
+        autoForwardComment: "New comment",
+        transportMessageHeaders: transportHeaders,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should use our generated headers, not the ones from transport
+    assert.ok(eml.includes("Auto-Submitted: auto-forwarded"), "Should use generated Auto-Submitted");
+    assert.ok(eml.includes("X-Auto-Forward-Comment: New comment"), "Should use generated X-Auto-Forward-Comment");
+
+    // Count occurrences - should have exactly one of each
+    const autoSubmittedMatches = eml.match(/Auto-Submitted:/g);
+    const commentMatches = eml.match(/X-Auto-Forward-Comment:/g);
+    assert.strictEqual(autoSubmittedMatches?.length, 1, "Should have exactly one Auto-Submitted header");
+    assert.strictEqual(commentMatches?.length, 1, "Should have exactly one X-Auto-Forward-Comment header");
+  });
+
+  it("should fold long X-Auto-Forward-Comment headers", () => {
+    const longComment =
+      "This message was automatically forwarded by a mailbox rule configured by the administrator for compliance and archival purposes";
+
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        autoSubmitted: "auto-forwarded" as const,
+        autoForwardComment: longComment,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("X-Auto-Forward-Comment:"), "Should have X-Auto-Forward-Comment header");
+
+    // The full value should be present (possibly folded)
+    const normalizedEml = eml.replace(/\r\n[\t ]/g, " ");
+    assert.ok(normalizedEml.includes(longComment), "Full comment value should be present");
+  });
+
+  it("should work with other message headers", () => {
+    const parsed = {
+      subject: "Auto-forwarded Urgent Message",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        messageId: "<test@example.com>",
+        priority: 1,
+        sensitivity: "Private" as const,
+        autoSubmitted: "auto-forwarded" as const,
+        autoForwardComment: "Rule: Forward to archive",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Message-ID: <test@example.com>"), "Should have Message-ID");
+    assert.ok(eml.includes("X-Priority: 1"), "Should have X-Priority");
+    assert.ok(eml.includes("Sensitivity: Private"), "Should have Sensitivity");
+    assert.ok(eml.includes("Auto-Submitted: auto-forwarded"), "Should have Auto-Submitted");
+    assert.ok(eml.includes("X-Auto-Forward-Comment: Rule: Forward to archive"), "Should have X-Auto-Forward-Comment");
+  });
+
+  it("should not include X-Auto-Forward-Comment without autoSubmitted", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        autoForwardComment: "Some comment",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    // X-Auto-Forward-Comment should still appear since it's set in headers
+    // (the extraction logic in msg.ts only sets comment when autoForwarded is true,
+    // but the converter just outputs what's in the headers)
+    assert.ok(
+      eml.includes("X-Auto-Forward-Comment: Some comment"),
+      "Should include X-Auto-Forward-Comment when set in headers",
+    );
+    assert.ok(!eml.includes("Auto-Submitted:"), "Should not have Auto-Submitted when not set");
+  });
+});

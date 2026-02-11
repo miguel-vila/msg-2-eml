@@ -30,6 +30,8 @@ const EXCLUDED_TRANSPORT_HEADERS = new Set([
   "list-subscribe",
   "list-unsubscribe",
   "keywords",
+  "auto-submitted",
+  "x-auto-forward-comment",
   "content-type",
   "content-transfer-encoding",
 ]);
@@ -186,6 +188,13 @@ export function convertToEml(parsed: ParsedMsg): string {
     // Add Keywords header from Outlook categories (RFC 5322)
     if (parsed.headers.keywords && parsed.headers.keywords.length > 0) {
       eml += `${foldHeader("Keywords", parsed.headers.keywords.join(", "))}\r\n`;
+    }
+    // Add Auto-Submitted header for auto-forwarded messages (RFC 3834)
+    if (parsed.headers.autoSubmitted) {
+      eml += `Auto-Submitted: ${parsed.headers.autoSubmitted}\r\n`;
+    }
+    if (parsed.headers.autoForwardComment) {
+      eml += `${foldHeader("X-Auto-Forward-Comment", parsed.headers.autoForwardComment)}\r\n`;
     }
     // Add original transport headers (Received, DKIM-Signature, SPF, Authentication-Results, etc.)
     if (parsed.headers.transportMessageHeaders) {

@@ -32,6 +32,9 @@ export interface MessageHeaders {
   listUnsubscribe?: string; // List-Unsubscribe header URL (from PidTagListUnsubscribe)
   // Categories / Keywords (RFC 5322)
   keywords?: string[]; // Outlook categories mapped to Keywords header (from PidLidCategories)
+  // Auto-Submitted (RFC 3834)
+  autoSubmitted?: "auto-forwarded"; // Auto-Submitted header value (from PidTagAutoForwarded)
+  autoForwardComment?: string; // Auto-forward comment (from PidTagAutoForwardComment, mapped to X-Auto-Forward-Comment)
 }
 
 export interface CalendarEvent {

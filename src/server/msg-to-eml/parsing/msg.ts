@@ -6,6 +6,8 @@ import {
   PidLidCcAttendeesString,
   PidLidLocation,
   PidLidToAttendeesString,
+  PidTagAutoForwardComment,
+  PidTagAutoForwarded,
   PidTagBody,
   PidTagBodyHtml,
   PidTagConversationIndex,
@@ -192,6 +194,16 @@ export function parseMsgFromMsg(msg: Msg, msgToEmlFromMsg: (msg: Msg) => string)
     }
   } catch {
     // Named property mapping not available (e.g., embedded messages) - skip categories
+  }
+
+  // Extract auto-forwarded status (PidTagAutoForwarded) for Auto-Submitted header (RFC 3834)
+  const autoForwarded = msg.getProperty<boolean>(PidTagAutoForwarded);
+  if (autoForwarded) {
+    headers.autoSubmitted = "auto-forwarded";
+    const autoForwardComment = msg.getProperty<string>(PidTagAutoForwardComment);
+    if (autoForwardComment) {
+      headers.autoForwardComment = autoForwardComment;
+    }
   }
 
   // Check if this is a calendar appointment

@@ -186,8 +186,10 @@
   {
     "id": "auto-submitted-header",
     "description": "Add Auto-Submitted header for auto-forwarded messages. Check PidTagAutoForwarded (0x0005) - if true, add 'Auto-Submitted: auto-forwarded' header per RFC 3834. Optionally include PidTagAutoForwardComment in the header or as X-Auto-Forward-Comment.",
-    "implemented": false,
+    "implemented": true,
     "priority": 19,
-    "testFiles": []
+    "testFiles": [
+      "src/server/msg-to-eml/converter/__tests__/eml.test.ts:convertToEml with auto-submitted header"
+    ]
   }
 ]
