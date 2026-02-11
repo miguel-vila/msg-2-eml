@@ -22,22 +22,30 @@ app.get("/api/health", (_req, res) => {
 
 // Convert single MSG file
 app.post("/api/convert", async (req, res) => {
+  const startTime = Date.now();
   try {
     const buffer = req.body as Buffer;
     if (!buffer || buffer.length === 0) {
+      console.warn(`[convert] Bad request: empty body`);
       res.status(400).json({ error: "No file provided" });
       return;
     }
+
+    console.log(`[convert] Received ${(buffer.length / 1024).toFixed(1)} KB`);
 
     const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
 
     const eml = msgToEml(arrayBuffer);
 
+    const elapsed = Date.now() - startTime;
+    console.log(`[convert] Success in ${elapsed}ms (output ${(eml.length / 1024).toFixed(1)} KB)`);
+
     res.setHeader("Content-Type", "message/rfc822");
     res.setHeader("Content-Disposition", 'attachment; filename="converted.eml"');
     res.send(eml);
   } catch (error) {
-    console.error("Conversion error:", error);
+    const elapsed = Date.now() - startTime;
+    console.error(`[convert] Failed after ${elapsed}ms:`, error instanceof Error ? error.stack : error);
     res.status(500).json({
       error: "Failed to convert file",
       details: error instanceof Error ? error.message : String(error),

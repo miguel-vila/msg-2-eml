@@ -158,17 +158,29 @@ class MsgToEmlConverter {
   }
 
   private async convertFile(file: File): Promise<ConversionResult> {
-    const response = await fetch("/api/convert", {
-      method: "POST",
-      body: await file.arrayBuffer(),
-      headers: {
-        "Content-Type": "application/octet-stream",
-      },
-    });
+    let response: Response;
+    try {
+      response = await fetch("/api/convert", {
+        method: "POST",
+        body: await file.arrayBuffer(),
+        headers: {
+          "Content-Type": "application/octet-stream",
+        },
+      });
+    } catch {
+      throw new Error("Network error: could not reach the server");
+    }
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.details || error.error || "Conversion failed");
+      let message = `Server error (${response.status})`;
+      try {
+        const error = await response.json();
+        message = error.details || error.error || message;
+      } catch {
+        // Response body wasn't JSON — use the status text
+        message = `Server error: ${response.status} ${response.statusText}`;
+      }
+      throw new Error(message);
     }
 
     const blob = await response.blob();
