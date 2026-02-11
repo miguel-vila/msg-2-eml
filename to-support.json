@@ -1,0 +1,62 @@
+[
+  {
+    "id": "sender-extraction",
+    "description": "Improve sender email extraction. Currently falls back to 'unknown@unknown.com' when PidTagSenderEmailAddress is missing. Try additional properties: PidTagSenderSmtpAddress, PidTagSentRepresentingEmailAddress, PidTagSentRepresentingSmtpAddress. Also extract the sender name from PidTagSenderName or PidTagSentRepresentingName. Format as '\"Name\" <email>' when both are available.",
+    "implemented": false,
+    "priority": 1
+  },
+  {
+    "id": "message-headers",
+    "description": "Extract and include important email headers from MSG properties: Message-ID (PidTagInternetMessageId), In-Reply-To (PidTagInReplyToId), References (PidTagInternetReferences), Reply-To (PidTagReplyRecipientNames with PidTagReplyRecipientEntries), X-Priority (map PidTagPriority/PidTagImportance to 1-5 scale). Add these headers to the EML output after the standard headers.",
+    "implemented": false,
+    "priority": 2
+  },
+  {
+    "id": "header-folding",
+    "description": "Implement RFC 5322 header folding. Headers longer than 78 characters should be folded by inserting CRLF followed by a space or tab (continuation). Apply to Subject, To, Cc, Bcc, and other long headers. Be careful not to break in the middle of encoded words or email addresses.",
+    "implemented": false,
+    "priority": 3
+  },
+  {
+    "id": "rtf-body",
+    "description": "Support RTF body extraction. MSG files often store body as compressed RTF in PidTagRtfCompressed. Use the 'rtf-stream-parser' or similar npm package to decompress and convert RTF to plain text as a fallback when PidTagBody is empty. The RTF may contain the HTML version wrapped in \\fromhtml1 tags - extract that if present.",
+    "implemented": false,
+    "priority": 4
+  },
+  {
+    "id": "inline-images",
+    "description": "Support inline images in HTML emails. Attachments with PidTagAttachContentId should be treated as inline. In the EML output, use Content-ID header matching the CID, and set Content-Disposition to 'inline' instead of 'attachment'. The HTML body references these via 'cid:content-id-value'.",
+    "implemented": false,
+    "priority": 5
+  },
+  {
+    "id": "embedded-messages",
+    "description": "Support embedded MSG files (forwarded emails, attachments). Use msg.embeddedMessages() to detect them. For each embedded message, recursively convert to EML and attach with Content-Type 'message/rfc822'. Preserve the original filename if available from PidTagAttachLongFilename.",
+    "implemented": false,
+    "priority": 6
+  },
+  {
+    "id": "filename-encoding",
+    "description": "Properly encode non-ASCII attachment filenames using RFC 2231 encoding. Instead of filename=\"naïve.pdf\", use filename*=UTF-8''na%C3%AFve.pdf. Apply to both Content-Type name parameter and Content-Disposition filename parameter. Keep ASCII filenames as-is for compatibility.",
+    "implemented": false,
+    "priority": 7
+  },
+  {
+    "id": "subject-encoding",
+    "description": "Encode non-ASCII subject lines using RFC 2047 MIME encoded-words. Format: =?UTF-8?B?base64-encoded-text?= for Base64 or =?UTF-8?Q?quoted-printable?= for quoted-printable. Split long encoded subjects into multiple encoded-words, each max 75 chars. Apply same encoding to From/To/Cc display names.",
+    "implemented": false,
+    "priority": 8
+  },
+  {
+    "id": "calendar-events",
+    "description": "Basic support for calendar MSG files (IPM.Appointment message class). Extract: start time (PidLidAppointmentStartWhole), end time (PidLidAppointmentEndWhole), location (PidLidLocation), organizer, attendees. Generate a text/calendar MIME part with basic VCALENDAR/VEVENT structure.",
+    "implemented": false,
+    "priority": 9
+  },
+  {
+    "id": "read-receipt",
+    "description": "Preserve read receipt and delivery receipt request headers. Check PidTagReadReceiptRequested and PidTagOriginatorDeliveryReportRequested. If true, add Disposition-Notification-To header (for read receipt) and Return-Receipt-To header (for delivery receipt) with the sender's email.",
+    "implemented": false,
+    "priority": 10
+  }
+]
