@@ -1622,3 +1622,125 @@ describe("convertToEml with calendar events", () => {
     assert.ok(eml.includes("ORGANIZER:mailto:organizer@example.com"), "Should have organizer");
   });
 });
+
+describe("convertToEml with read and delivery receipt headers", () => {
+  it("should include Disposition-Notification-To header when read receipt is requested", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        dispositionNotificationTo: "sender@example.com",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Disposition-Notification-To: sender@example.com"), "Should have Disposition-Notification-To header");
+  });
+
+  it("should include Return-Receipt-To header when delivery receipt is requested", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        returnReceiptTo: "sender@example.com",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Return-Receipt-To: sender@example.com"), "Should have Return-Receipt-To header");
+  });
+
+  it("should include both receipt headers when both are requested", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        dispositionNotificationTo: "sender@example.com",
+        returnReceiptTo: "sender@example.com",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Disposition-Notification-To: sender@example.com"), "Should have Disposition-Notification-To header");
+    assert.ok(eml.includes("Return-Receipt-To: sender@example.com"), "Should have Return-Receipt-To header");
+  });
+
+  it("should not include receipt headers when not requested", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(!eml.includes("Disposition-Notification-To:"), "Should not have Disposition-Notification-To header");
+    assert.ok(!eml.includes("Return-Receipt-To:"), "Should not have Return-Receipt-To header");
+  });
+
+  it("should place receipt headers after other message headers", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        messageId: "<test@example.com>",
+        dispositionNotificationTo: "sender@example.com",
+        returnReceiptTo: "sender@example.com",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+    const mimeVersionIndex = eml.indexOf("MIME-Version:");
+    const messageIdIndex = eml.indexOf("Message-ID:");
+    const dntIndex = eml.indexOf("Disposition-Notification-To:");
+    const rrtIndex = eml.indexOf("Return-Receipt-To:");
+    const contentTypeIndex = eml.indexOf("Content-Type:");
+
+    assert.ok(mimeVersionIndex < messageIdIndex, "MIME-Version should come before Message-ID");
+    assert.ok(messageIdIndex < dntIndex, "Message-ID should come before Disposition-Notification-To");
+    assert.ok(dntIndex < rrtIndex, "Disposition-Notification-To should come before Return-Receipt-To");
+    assert.ok(rrtIndex < contentTypeIndex, "Return-Receipt-To should come before Content-Type");
+  });
+
+  it("should work with other headers like X-Priority", () => {
+    const parsed = {
+      subject: "Urgent with Receipt",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Urgent message",
+      attachments: [],
+      headers: {
+        priority: 1,
+        dispositionNotificationTo: "sender@example.com",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("X-Priority: 1"), "Should have X-Priority header");
+    assert.ok(eml.includes("Disposition-Notification-To: sender@example.com"), "Should have Disposition-Notification-To header");
+  });
+});

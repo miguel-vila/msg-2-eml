@@ -33,6 +33,8 @@ import {
   PidLidLocation,
   PidLidToAttendeesString,
   PidLidCcAttendeesString,
+  PidTagReadReceiptRequested,
+  PidTagOriginatorDeliveryReportRequested,
 } from "msg-parser";
 import { decompressRTF } from "@kenjiuno/decompressrtf";
 import { deEncapsulateSync } from "rtf-stream-parser";
@@ -58,6 +60,8 @@ interface MessageHeaders {
   references?: string;
   replyTo?: string;
   priority?: number; // 1-5 scale (1=highest, 5=lowest)
+  dispositionNotificationTo?: string; // For read receipt requests
+  returnReceiptTo?: string; // For delivery receipt requests
 }
 
 interface CalendarEvent {
@@ -902,6 +906,20 @@ function parseMsgFromMsg(msg: Msg): ParsedMsg {
   if (replyTo) headers.replyTo = replyTo;
   if (xPriority !== undefined) headers.priority = xPriority;
 
+  // Check for read receipt and delivery receipt requests
+  const readReceiptRequested = msg.getProperty<boolean>(PidTagReadReceiptRequested);
+  const deliveryReceiptRequested = msg.getProperty<boolean>(PidTagOriginatorDeliveryReportRequested);
+
+  // If read receipt is requested, use sender's email for Disposition-Notification-To header
+  if (readReceiptRequested && senderEmail) {
+    headers.dispositionNotificationTo = senderEmail;
+  }
+
+  // If delivery receipt is requested, use sender's email for Return-Receipt-To header
+  if (deliveryReceiptRequested && senderEmail) {
+    headers.returnReceiptTo = senderEmail;
+  }
+
   // Check if this is a calendar appointment
   const messageClass = msg.getProperty<string>(PidTagMessageClass);
   let calendarEvent: CalendarEvent | undefined;
@@ -1014,6 +1032,12 @@ export function convertToEml(parsed: ParsedMsg): string {
     }
     if (parsed.headers.priority !== undefined) {
       eml += `X-Priority: ${parsed.headers.priority}\r\n`;
+    }
+    if (parsed.headers.dispositionNotificationTo) {
+      eml += foldHeader("Disposition-Notification-To", parsed.headers.dispositionNotificationTo) + "\r\n";
+    }
+    if (parsed.headers.returnReceiptTo) {
+      eml += foldHeader("Return-Receipt-To", parsed.headers.returnReceiptTo) + "\r\n";
     }
   }
 
