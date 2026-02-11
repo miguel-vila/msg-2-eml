@@ -191,5 +191,33 @@
     "testFiles": [
       "src/server/msg-to-eml/converter/__tests__/eml.test.ts:convertToEml with auto-submitted header"
     ]
+  },
+  {
+    "id": "sender-from-transport-headers",
+    "description": "When no sender MAPI properties are available (PidTagSenderSmtpAddress, PidTagSenderEmailAddress, PidTagSentRepresentingSmtpAddress, PidTagSentRepresentingEmailAddress are all missing), fall back to parsing the From: header from PidTagTransportMessageHeaders as a last resort before using 'unknown@unknown.com'. Affected samples: fyicenter-sample.msg, strangeDate.msg, test_email.msg.",
+    "implemented": false,
+    "priority": 20,
+    "testFiles": []
+  },
+  {
+    "id": "date-fallback-client-submit-time",
+    "description": "When PidTagMessageDeliveryTime is missing, fall back to PidTagClientSubmitTime (0x0039) before defaulting to the current date. ClientSubmitTime records when the message was submitted by the client, which is a better approximation than the current timestamp. Also try parsing the Date: header from PidTagTransportMessageHeaders as another fallback. Affected samples: msgKitOut_attach.msg, strangeDate.msg, testOut_attach.msg, testOut_noattach.msg.",
+    "implemented": false,
+    "priority": 21,
+    "testFiles": []
+  },
+  {
+    "id": "recipient-email-from-transport-headers",
+    "description": "When recipient MAPI properties lack an email address (PidTagSmtpAddress and PidTagEmailAddress are both empty), try to resolve the recipient email by parsing To:/Cc:/Bcc: headers from PidTagTransportMessageHeaders and matching by display name. Affected sample: fyicenter-sample.msg.",
+    "implemented": false,
+    "priority": 22,
+    "testFiles": []
+  },
+  {
+    "id": "empty-body-handling",
+    "description": "Improve handling of MSG files with no body content at all (no PidTagBody, no PidTagBodyHtml, no PidTagRtfCompressed). Currently the EML is generated with an empty body part. Consider generating a minimal text/plain part or omitting the body MIME part entirely when there is truly no content. Affected samples: msgKitOut_attach.msg, testOut_attach.msg, testOut_noattach.msg.",
+    "implemented": false,
+    "priority": 23,
+    "testFiles": []
   }
 ]
