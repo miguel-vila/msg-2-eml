@@ -10,13 +10,19 @@ import {
 import { encodeDisplayName } from "../encoding/index.js";
 
 export function extractSenderEmail(msg: Msg): string | undefined {
-  return (
-    msg.getProperty<string>(PidTagSenderEmailAddress) ||
-    msg.getProperty<string>(PidTagSenderSmtpAddress) ||
-    msg.getProperty<string>(PidTagSentRepresentingEmailAddress) ||
-    msg.getProperty<string>(PidTagSentRepresentingSmtpAddress) ||
-    undefined
-  );
+  // Prefer SMTP addresses over X500/Exchange addresses
+  const smtpAddress =
+    msg.getProperty<string>(PidTagSenderSmtpAddress) || msg.getProperty<string>(PidTagSentRepresentingSmtpAddress);
+
+  if (smtpAddress) {
+    return smtpAddress;
+  }
+
+  // Fall back to email address properties (may be X500)
+  const emailAddress =
+    msg.getProperty<string>(PidTagSenderEmailAddress) || msg.getProperty<string>(PidTagSentRepresentingEmailAddress);
+
+  return emailAddress || undefined;
 }
 
 export function extractSenderName(msg: Msg): string | undefined {

@@ -112,5 +112,42 @@
       "src/server/msg-to-eml.test.ts:convertToEml with read and delivery receipt headers",
       "src/server/msg-to-eml.integration.test.ts:Receipt Headers"
     ]
+  },
+  {
+    "id": "smtp-address-preference",
+    "description": "Prefer SMTP addresses over X500/Exchange addresses. For sender: check PidTagSenderSmtpAddress before PidTagSenderEmailAddress. For recipients: check PidTagSmtpAddress before PidTagEmailAddress. X500 addresses like '/O=EXCHANGELABS/OU=.../CN=...' are internal Exchange identifiers that don't work outside Microsoft infrastructure.",
+    "implemented": true,
+    "priority": 11,
+    "testFiles": [
+      "src/server/msg-to-eml.integration.test.ts:Full MSG to EML Conversion"
+    ]
+  },
+  {
+    "id": "transport-headers",
+    "description": "Preserve original email transport headers from PidTagTransportMessageHeaders (0x007D). This property contains the original headers from when the email was received, including: Received: headers (mail routing), Authentication-Results, DKIM-Signature, SPF results, and X-* headers. These should be included in the EML output to preserve the complete email provenance and authentication chain.",
+    "implemented": false,
+    "priority": 12,
+    "testFiles": []
+  },
+  {
+    "id": "conversation-threading",
+    "description": "Support email threading metadata. Extract PidTagConversationIndex (0x0071) which contains a binary blob for thread tracking, and PidTagConversationTopic (0x0070) which contains the thread subject. The conversation index can be converted to Thread-Index header for compatibility with email clients that support threading.",
+    "implemented": false,
+    "priority": 13,
+    "testFiles": []
+  },
+  {
+    "id": "sender-on-behalf",
+    "description": "Support 'on behalf of' scenarios where PidTagSentRepresenting* differs from PidTagSender*. When the sender is acting on behalf of another user, include both in the From header or add a Sender header. This preserves delegation information common in corporate Exchange environments.",
+    "implemented": false,
+    "priority": 14,
+    "testFiles": []
+  },
+  {
+    "id": "received-headers",
+    "description": "Extract received-by information from PidTagReceivedBySmtpAddress (0x5D07) and PidTagReceivedByName (0x0040). This can be used to generate a synthetic Received: header or Delivered-To header showing the final recipient, useful when the original transport headers are not available.",
+    "implemented": false,
+    "priority": 15,
+    "testFiles": []
   }
 ]
