@@ -23,6 +23,8 @@ export interface MessageHeaders {
   transportMessageHeaders?: string; // Original transport headers (Received, DKIM, SPF, etc.)
   threadIndex?: string; // Base64-encoded thread index for email threading (Thread-Index header)
   threadTopic?: string; // Conversation topic/subject for threading (Thread-Topic header)
+  receivedByEmail?: string; // SMTP address of the final recipient (from PidTagReceivedBySmtpAddress)
+  receivedByName?: string; // Display name of the final recipient (from PidTagReceivedByName)
 }
 
 export interface CalendarEvent {

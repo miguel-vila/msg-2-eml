@@ -24,6 +24,7 @@ const EXCLUDED_TRANSPORT_HEADERS = new Set([
   "return-receipt-to",
   "thread-index",
   "thread-topic",
+  "delivered-to",
   "content-type",
   "content-transfer-encoding",
 ]);
@@ -167,6 +168,9 @@ export function convertToEml(parsed: ParsedMsg): string {
     // Add original transport headers (Received, DKIM-Signature, SPF, Authentication-Results, etc.)
     if (parsed.headers.transportMessageHeaders) {
       eml += extractTransportHeaders(parsed.headers.transportMessageHeaders);
+    } else if (parsed.headers.receivedByEmail) {
+      // When transport headers are not available, generate a Delivered-To header from received-by info
+      eml += `${foldHeader("Delivered-To", parsed.headers.receivedByEmail)}\r\n`;
     }
   }
 

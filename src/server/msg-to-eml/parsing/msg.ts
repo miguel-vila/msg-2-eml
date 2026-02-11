@@ -18,6 +18,8 @@ import {
   PidTagOriginatorDeliveryReportRequested,
   PidTagPriority,
   PidTagReadReceiptRequested,
+  PidTagReceivedByName,
+  PidTagReceivedBySmtpAddress,
   PidTagReplyRecipientNames,
   PidTagRtfCompressed,
   PidTagSubject,
@@ -119,6 +121,17 @@ export function parseMsgFromMsg(msg: Msg, msgToEmlFromMsg: (msg: Msg) => string)
   const conversationTopic = msg.getProperty<string>(PidTagConversationTopic);
   if (conversationTopic) {
     headers.threadTopic = conversationTopic;
+  }
+
+  // Extract received-by information for the final recipient
+  const receivedBySmtpAddress = msg.getProperty<string>(PidTagReceivedBySmtpAddress);
+  if (receivedBySmtpAddress) {
+    headers.receivedByEmail = receivedBySmtpAddress;
+  }
+
+  const receivedByName = msg.getProperty<string>(PidTagReceivedByName);
+  if (receivedByName) {
+    headers.receivedByName = receivedByName;
   }
 
   // Check if this is a calendar appointment

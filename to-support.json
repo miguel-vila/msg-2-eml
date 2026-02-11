@@ -151,8 +151,10 @@
   {
     "id": "received-headers",
     "description": "Extract received-by information from PidTagReceivedBySmtpAddress (0x5D07) and PidTagReceivedByName (0x0040). This can be used to generate a synthetic Received: header or Delivered-To header showing the final recipient, useful when the original transport headers are not available.",
-    "implemented": false,
+    "implemented": true,
     "priority": 15,
-    "testFiles": []
+    "testFiles": [
+      "src/server/msg-to-eml/converter/__tests__/eml.test.ts:convertToEml with received-by headers"
+    ]
   }
 ]

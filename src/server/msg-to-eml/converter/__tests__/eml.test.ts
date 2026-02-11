@@ -1749,3 +1749,162 @@ From: sender@example.com`;
     assert.strictEqual(threadTopicMatches?.length, 1, "Should have exactly one Thread-Topic header");
   });
 });
+
+describe("convertToEml with received-by headers", () => {
+  it("should include Delivered-To header when transport headers are not available", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        receivedByEmail: "final-recipient@example.com",
+        receivedByName: "Final Recipient",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Delivered-To: final-recipient@example.com"), "Should have Delivered-To header");
+  });
+
+  it("should not include Delivered-To header when transport headers are present", () => {
+    const transportHeaders = `Received: from mail.example.com by mx.example.org with SMTP id abc123\r
+From: sender@example.com`;
+
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        receivedByEmail: "final-recipient@example.com",
+        receivedByName: "Final Recipient",
+        transportMessageHeaders: transportHeaders,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should have Received header from transport
+    assert.ok(eml.includes("Received: from mail.example.com"), "Should include Received header from transport");
+    // Should NOT have Delivered-To header since transport headers are present
+    assert.ok(!eml.includes("Delivered-To:"), "Should not have Delivered-To when transport headers are present");
+  });
+
+  it("should not include Delivered-To header when receivedByEmail is not present", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(!eml.includes("Delivered-To:"), "Should not have Delivered-To when receivedByEmail is not present");
+  });
+
+  it("should place Delivered-To header before Content-Type", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        receivedByEmail: "final-recipient@example.com",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    const deliveredToIndex = eml.indexOf("Delivered-To:");
+    const contentTypeIndex = eml.indexOf("Content-Type:");
+
+    assert.ok(deliveredToIndex > 0, "Should have Delivered-To header");
+    assert.ok(deliveredToIndex < contentTypeIndex, "Delivered-To should come before Content-Type");
+  });
+
+  it("should fold long Delivered-To headers", () => {
+    const longEmail =
+      "very-long-email-address-that-exceeds-normal-length@very-long-domain-name-that-makes-the-header-exceed-78-characters.example.com";
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        receivedByEmail: longEmail,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should have Delivered-To header
+    assert.ok(eml.includes("Delivered-To:"), "Should have Delivered-To header");
+
+    // The full email should be present (possibly folded)
+    const normalizedEml = eml.replace(/\r\n[\t ]/g, "");
+    assert.ok(normalizedEml.includes(longEmail), "Full email address should be present");
+  });
+
+  it("should exclude Delivered-To from transport headers when we generate it", () => {
+    const transportHeaders = `Received: from mail.example.com by mx.example.org\r
+Delivered-To: old-recipient@example.com\r
+From: sender@example.com`;
+
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        transportMessageHeaders: transportHeaders,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should include Received header from transport
+    assert.ok(eml.includes("Received: from mail.example.com"), "Should include Received header");
+    // Should NOT include Delivered-To from transport headers (it's excluded)
+    assert.ok(!eml.includes("Delivered-To: old-recipient@example.com"), "Should exclude Delivered-To from transport");
+  });
+
+  it("should work alongside other message headers", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        messageId: "<test@example.com>",
+        priority: 3,
+        threadTopic: "Test Thread",
+        receivedByEmail: "final-recipient@example.com",
+        receivedByName: "Final Recipient",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Message-ID: <test@example.com>"), "Should have Message-ID");
+    assert.ok(eml.includes("X-Priority: 3"), "Should have X-Priority");
+    assert.ok(eml.includes("Thread-Topic: Test Thread"), "Should have Thread-Topic");
+    assert.ok(eml.includes("Delivered-To: final-recipient@example.com"), "Should have Delivered-To");
+  });
+});
