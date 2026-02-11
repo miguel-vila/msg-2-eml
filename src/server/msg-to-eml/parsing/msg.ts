@@ -38,7 +38,7 @@ import { mapToXPriority } from "../mime/index.js";
 import { extractBodyFromRtf } from "../rtf/index.js";
 import type { Attachment, CalendarEvent, MessageHeaders, ParsedMsg } from "../types/index.js";
 import { parseAttachment, parseEmbeddedMessage } from "./attachment.js";
-import { parseRecipient } from "./recipient.js";
+import { parseRecipient, parseRecipientsFromTransportHeaders } from "./recipient.js";
 import { extractSenderInfo, formatSender } from "./sender.js";
 
 /**
@@ -127,7 +127,10 @@ export function parseMsgFromMsg(msg: Msg, msgToEmlFromMsg: (msg: Msg) => string)
 
   const from = formatSender(senderEmail, senderName);
 
-  const recipients = msg.recipients().map(parseRecipient);
+  const transportRecipients = transportMessageHeaders
+    ? parseRecipientsFromTransportHeaders(transportMessageHeaders)
+    : undefined;
+  const recipients = msg.recipients().map((r) => parseRecipient(r, transportRecipients));
 
   // Parse regular attachments
   const regularAttachments = msg

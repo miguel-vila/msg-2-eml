@@ -1,6 +1,6 @@
 export { parseAttachment, parseEmbeddedMessage } from "./attachment.js";
 export { mapSensitivity, parseMsg, parseMsgFromMsg } from "./msg.js";
-export { parseRecipient } from "./recipient.js";
+export { parseRecipient, parseRecipientsFromTransportHeaders, type TransportRecipients } from "./recipient.js";
 export {
   extractSenderEmail,
   extractSenderInfo,

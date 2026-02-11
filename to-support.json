@@ -214,9 +214,12 @@
   {
     "id": "recipient-email-from-transport-headers",
     "description": "When recipient MAPI properties lack an email address (PidTagSmtpAddress and PidTagEmailAddress are both empty), try to resolve the recipient email by parsing To:/Cc:/Bcc: headers from PidTagTransportMessageHeaders and matching by display name. Affected sample: fyicenter-sample.msg.",
-    "implemented": false,
+    "implemented": true,
     "priority": 22,
-    "testFiles": []
+    "testFiles": [
+      "src/server/msg-to-eml/parsing/__tests__/recipient.test.ts:parseRecipientsFromTransportHeaders",
+      "src/server/msg-to-eml/parsing/__tests__/recipient.test.ts:parseRecipient with transport header fallback"
+    ]
   },
   {
     "id": "empty-body-handling",
