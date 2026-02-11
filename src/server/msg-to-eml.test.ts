@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { convertToEml, formatSender } from "./msg-to-eml.js";
+import { convertToEml, formatSender, mapToXPriority } from "./msg-to-eml.js";
 
 describe("convertToEml", () => {
   it("should generate basic EML headers", () => {
@@ -159,5 +159,199 @@ describe("formatSender", () => {
   it("should return fallback when both are empty strings", () => {
     const result = formatSender("", "");
     assert.strictEqual(result, "unknown@unknown.com");
+  });
+});
+
+describe("mapToXPriority", () => {
+  it("should map PidTagPriority urgent (1) to X-Priority 1", () => {
+    assert.strictEqual(mapToXPriority(1, undefined), 1);
+  });
+
+  it("should map PidTagPriority normal (0) to X-Priority 3", () => {
+    assert.strictEqual(mapToXPriority(0, undefined), 3);
+  });
+
+  it("should map PidTagPriority non-urgent (-1) to X-Priority 5", () => {
+    assert.strictEqual(mapToXPriority(-1, undefined), 5);
+  });
+
+  it("should map PidTagImportance high (2) to X-Priority 1", () => {
+    assert.strictEqual(mapToXPriority(undefined, 2), 1);
+  });
+
+  it("should map PidTagImportance normal (1) to X-Priority 3", () => {
+    assert.strictEqual(mapToXPriority(undefined, 1), 3);
+  });
+
+  it("should map PidTagImportance low (0) to X-Priority 5", () => {
+    assert.strictEqual(mapToXPriority(undefined, 0), 5);
+  });
+
+  it("should prefer PidTagPriority over PidTagImportance", () => {
+    // Priority urgent with importance low should still return 1
+    assert.strictEqual(mapToXPriority(1, 0), 1);
+  });
+
+  it("should return undefined when both are undefined", () => {
+    assert.strictEqual(mapToXPriority(undefined, undefined), undefined);
+  });
+});
+
+describe("convertToEml with message headers", () => {
+  it("should include Message-ID header when present", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        messageId: "<abc123@example.com>",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Message-ID: <abc123@example.com>"));
+  });
+
+  it("should include In-Reply-To header when present", () => {
+    const parsed = {
+      subject: "Re: Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        inReplyTo: "<original123@example.com>",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("In-Reply-To: <original123@example.com>"));
+  });
+
+  it("should include References header when present", () => {
+    const parsed = {
+      subject: "Re: Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        references: "<msg1@example.com> <msg2@example.com>",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("References: <msg1@example.com> <msg2@example.com>"));
+  });
+
+  it("should include Reply-To header when present", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        replyTo: "reply@example.com",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Reply-To: reply@example.com"));
+  });
+
+  it("should include X-Priority header when present", () => {
+    const parsed = {
+      subject: "Urgent Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        priority: 1,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("X-Priority: 1"));
+  });
+
+  it("should include all headers when present", () => {
+    const parsed = {
+      subject: "Full Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        messageId: "<full123@example.com>",
+        inReplyTo: "<original@example.com>",
+        references: "<ref1@example.com>",
+        replyTo: "reply@example.com",
+        priority: 2,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Message-ID: <full123@example.com>"));
+    assert.ok(eml.includes("In-Reply-To: <original@example.com>"));
+    assert.ok(eml.includes("References: <ref1@example.com>"));
+    assert.ok(eml.includes("Reply-To: reply@example.com"));
+    assert.ok(eml.includes("X-Priority: 2"));
+  });
+
+  it("should not include headers section when headers is undefined", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(!eml.includes("Message-ID:"));
+    assert.ok(!eml.includes("In-Reply-To:"));
+    assert.ok(!eml.includes("References:"));
+    assert.ok(!eml.includes("Reply-To:"));
+    assert.ok(!eml.includes("X-Priority:"));
+  });
+
+  it("should place message headers after MIME-Version header", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        messageId: "<test@example.com>",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+    const mimeVersionIndex = eml.indexOf("MIME-Version:");
+    const messageIdIndex = eml.indexOf("Message-ID:");
+    const contentTypeIndex = eml.indexOf("Content-Type:");
+
+    assert.ok(mimeVersionIndex < messageIdIndex, "MIME-Version should come before Message-ID");
+    assert.ok(messageIdIndex < contentTypeIndex, "Message-ID should come before Content-Type");
   });
 });

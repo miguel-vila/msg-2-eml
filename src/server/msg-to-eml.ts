@@ -18,6 +18,12 @@ import {
   PidTagAttachLongFilename,
   PidTagAttachFilename,
   PidTagAttachMimeTag,
+  PidTagInternetMessageId,
+  PidTagInReplyToId,
+  PidTagInternetReferences,
+  PidTagReplyRecipientNames,
+  PidTagPriority,
+  PidTagImportance,
 } from "msg-parser";
 
 interface Attachment {
@@ -32,6 +38,14 @@ interface ParsedRecipient {
   type: "to" | "cc" | "bcc";
 }
 
+interface MessageHeaders {
+  messageId?: string;
+  inReplyTo?: string;
+  references?: string;
+  replyTo?: string;
+  priority?: number; // 1-5 scale (1=highest, 5=lowest)
+}
+
 interface ParsedMsg {
   subject: string;
   from: string;
@@ -40,6 +54,7 @@ interface ParsedMsg {
   body: string;
   bodyHtml?: string;
   attachments: Attachment[];
+  headers?: MessageHeaders;
 }
 
 function generateBoundary(): string {
@@ -95,6 +110,28 @@ function getRecipientType(type: number | undefined): "to" | "cc" | "bcc" {
   if (type === 2) return "cc";
   if (type === 3) return "bcc";
   return "to";
+}
+
+/**
+ * Maps MAPI priority and importance values to X-Priority scale (1-5).
+ * PidTagPriority: -1 (non-urgent), 0 (normal), 1 (urgent)
+ * PidTagImportance: 0 (low), 1 (normal), 2 (high)
+ * X-Priority: 1 (highest), 2 (high), 3 (normal), 4 (low), 5 (lowest)
+ */
+export function mapToXPriority(priority: number | undefined, importance: number | undefined): number | undefined {
+  // Prefer PidTagPriority if available
+  if (priority !== undefined) {
+    if (priority === 1) return 1;  // urgent -> highest
+    if (priority === 0) return 3;  // normal -> normal
+    if (priority === -1) return 5; // non-urgent -> lowest
+  }
+  // Fall back to PidTagImportance
+  if (importance !== undefined) {
+    if (importance === 2) return 1; // high -> highest
+    if (importance === 1) return 3; // normal -> normal
+    if (importance === 0) return 5; // low -> lowest
+  }
+  return undefined;
 }
 
 function parseRecipient(recipient: MsgRecipient): ParsedRecipient {
@@ -166,6 +203,22 @@ export function parseMsg(buffer: ArrayBuffer): ParsedMsg {
     .map(parseAttachment)
     .filter((a): a is Attachment => a !== null);
 
+  // Extract additional message headers
+  const messageId = msg.getProperty<string>(PidTagInternetMessageId);
+  const inReplyTo = msg.getProperty<string>(PidTagInReplyToId);
+  const references = msg.getProperty<string>(PidTagInternetReferences);
+  const replyTo = msg.getProperty<string>(PidTagReplyRecipientNames);
+  const priority = msg.getProperty<number>(PidTagPriority);
+  const importance = msg.getProperty<number>(PidTagImportance);
+  const xPriority = mapToXPriority(priority, importance);
+
+  const headers: MessageHeaders = {};
+  if (messageId) headers.messageId = messageId;
+  if (inReplyTo) headers.inReplyTo = inReplyTo;
+  if (references) headers.references = references;
+  if (replyTo) headers.replyTo = replyTo;
+  if (xPriority !== undefined) headers.priority = xPriority;
+
   return {
     subject,
     from,
@@ -174,6 +227,7 @@ export function parseMsg(buffer: ArrayBuffer): ParsedMsg {
     body,
     bodyHtml: bodyHtml || undefined,
     attachments,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
   };
 }
 
@@ -206,6 +260,25 @@ export function convertToEml(parsed: ParsedMsg): string {
   eml += `Subject: ${parsed.subject}\r\n`;
   eml += `Date: ${formatEmailDate(parsed.date)}\r\n`;
   eml += `MIME-Version: 1.0\r\n`;
+
+  // Add additional message headers
+  if (parsed.headers) {
+    if (parsed.headers.messageId) {
+      eml += `Message-ID: ${parsed.headers.messageId}\r\n`;
+    }
+    if (parsed.headers.inReplyTo) {
+      eml += `In-Reply-To: ${parsed.headers.inReplyTo}\r\n`;
+    }
+    if (parsed.headers.references) {
+      eml += `References: ${parsed.headers.references}\r\n`;
+    }
+    if (parsed.headers.replyTo) {
+      eml += `Reply-To: ${parsed.headers.replyTo}\r\n`;
+    }
+    if (parsed.headers.priority !== undefined) {
+      eml += `X-Priority: ${parsed.headers.priority}\r\n`;
+    }
+  }
 
   if (hasAttachments) {
     eml += `Content-Type: multipart/mixed; boundary="${boundary}"\r\n`;
