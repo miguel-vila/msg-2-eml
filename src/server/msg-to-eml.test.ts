@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { convertToEml, formatSender, mapToXPriority, foldHeader, extractBodyFromRtf, parseMsg, encodeRfc2231, formatFilenameParams, encodeRfc2047, encodeDisplayName } from "./msg-to-eml.js";
+import { convertToEml, formatSender, mapToXPriority, foldHeader, extractBodyFromRtf, parseMsg, encodeRfc2231, formatFilenameParams, encodeRfc2047, encodeDisplayName, formatICalDateTime, escapeICalText, foldICalLine, parseAttendeeString, isCalendarMessage, generateVCalendar } from "./msg-to-eml.js";
 
 /**
  * Creates an uncompressed RTF format for PidTagRtfCompressed.
@@ -1331,5 +1331,294 @@ describe("convertToEml with non-ASCII display names", () => {
     // Non-ASCII name should be encoded
     assert.ok(eml.includes("=?UTF-8?B?"), "Non-ASCII name should be encoded");
     assert.ok(eml.includes("<jose@example.com>"), "Should include Jose's email");
+  });
+});
+
+describe("formatICalDateTime", () => {
+  it("should format date in iCalendar format", () => {
+    const date = new Date("2024-03-15T14:30:45Z");
+    const result = formatICalDateTime(date);
+    assert.strictEqual(result, "20240315T143045Z");
+  });
+
+  it("should handle midnight", () => {
+    const date = new Date("2024-01-01T00:00:00Z");
+    const result = formatICalDateTime(date);
+    assert.strictEqual(result, "20240101T000000Z");
+  });
+
+  it("should pad single-digit values", () => {
+    const date = new Date("2024-01-05T09:05:01Z");
+    const result = formatICalDateTime(date);
+    assert.strictEqual(result, "20240105T090501Z");
+  });
+});
+
+describe("escapeICalText", () => {
+  it("should escape backslashes", () => {
+    assert.strictEqual(escapeICalText("path\\to\\file"), "path\\\\to\\\\file");
+  });
+
+  it("should escape semicolons", () => {
+    assert.strictEqual(escapeICalText("first;second"), "first\\;second");
+  });
+
+  it("should escape commas", () => {
+    assert.strictEqual(escapeICalText("one, two"), "one\\, two");
+  });
+
+  it("should escape newlines", () => {
+    assert.strictEqual(escapeICalText("line1\nline2"), "line1\\nline2");
+    assert.strictEqual(escapeICalText("line1\r\nline2"), "line1\\nline2");
+  });
+});
+
+describe("foldICalLine", () => {
+  it("should not fold short lines", () => {
+    const shortLine = "SUMMARY:Short meeting";
+    const result = foldICalLine(shortLine);
+    assert.strictEqual(result, shortLine);
+  });
+
+  it("should fold long lines at 75 characters", () => {
+    const longLine = "DESCRIPTION:This is a very long description that definitely exceeds the 75 character limit for iCalendar lines";
+    const result = foldICalLine(longLine);
+
+    const lines = result.split("\r\n");
+    assert.ok(lines.length > 1, "Should be folded into multiple lines");
+    assert.strictEqual(lines[0].length, 75, "First line should be 75 chars");
+
+    // Continuation lines should start with space
+    for (let i = 1; i < lines.length; i++) {
+      assert.ok(lines[i].startsWith(" "), "Continuation lines should start with space");
+    }
+  });
+});
+
+describe("parseAttendeeString", () => {
+  it("should parse semicolon-separated attendees", () => {
+    const result = parseAttendeeString("alice@example.com; bob@example.com; charlie@example.com");
+    assert.deepStrictEqual(result, ["alice@example.com", "bob@example.com", "charlie@example.com"]);
+  });
+
+  it("should trim whitespace from attendees", () => {
+    const result = parseAttendeeString("  alice@example.com  ;  bob@example.com  ");
+    assert.deepStrictEqual(result, ["alice@example.com", "bob@example.com"]);
+  });
+
+  it("should return empty array for undefined input", () => {
+    const result = parseAttendeeString(undefined);
+    assert.deepStrictEqual(result, []);
+  });
+
+  it("should filter out empty strings", () => {
+    const result = parseAttendeeString("alice@example.com;;bob@example.com;");
+    assert.deepStrictEqual(result, ["alice@example.com", "bob@example.com"]);
+  });
+});
+
+describe("isCalendarMessage", () => {
+  it("should return true for IPM.Appointment", () => {
+    assert.strictEqual(isCalendarMessage("IPM.Appointment"), true);
+  });
+
+  it("should return true for lowercase ipm.appointment", () => {
+    assert.strictEqual(isCalendarMessage("ipm.appointment"), true);
+  });
+
+  it("should return true for subclasses of IPM.Appointment", () => {
+    assert.strictEqual(isCalendarMessage("IPM.Appointment.Occurrence"), true);
+  });
+
+  it("should return false for regular email", () => {
+    assert.strictEqual(isCalendarMessage("IPM.Note"), false);
+  });
+
+  it("should return false for undefined", () => {
+    assert.strictEqual(isCalendarMessage(undefined), false);
+  });
+});
+
+describe("generateVCalendar", () => {
+  it("should generate valid VCALENDAR structure", () => {
+    const event = {
+      startTime: new Date("2024-03-15T14:00:00Z"),
+      endTime: new Date("2024-03-15T15:00:00Z"),
+      location: "Conference Room A",
+      organizer: "organizer@example.com",
+      attendees: ["attendee1@example.com", "attendee2@example.com"],
+    };
+
+    const vcal = generateVCalendar(event, "Team Meeting", "Quarterly planning session");
+
+    assert.ok(vcal.includes("BEGIN:VCALENDAR"), "Should have VCALENDAR");
+    assert.ok(vcal.includes("END:VCALENDAR"), "Should end VCALENDAR");
+    assert.ok(vcal.includes("VERSION:2.0"), "Should have version");
+    assert.ok(vcal.includes("PRODID:"), "Should have product ID");
+    assert.ok(vcal.includes("METHOD:REQUEST"), "Should have method");
+    assert.ok(vcal.includes("BEGIN:VEVENT"), "Should have VEVENT");
+    assert.ok(vcal.includes("END:VEVENT"), "Should end VEVENT");
+    assert.ok(vcal.includes("DTSTART:20240315T140000Z"), "Should have start time");
+    assert.ok(vcal.includes("DTEND:20240315T150000Z"), "Should have end time");
+    assert.ok(vcal.includes("SUMMARY:Team Meeting"), "Should have summary");
+    assert.ok(vcal.includes("LOCATION:Conference Room A"), "Should have location");
+    assert.ok(vcal.includes("ORGANIZER:mailto:organizer@example.com"), "Should have organizer");
+    assert.ok(vcal.includes("ATTENDEE:mailto:attendee1@example.com"), "Should have attendee 1");
+    assert.ok(vcal.includes("ATTENDEE:mailto:attendee2@example.com"), "Should have attendee 2");
+  });
+
+  it("should escape special characters in text", () => {
+    const event = {
+      startTime: new Date("2024-03-15T14:00:00Z"),
+      endTime: new Date("2024-03-15T15:00:00Z"),
+      location: "Room A; Building 1",
+      attendees: [],
+    };
+
+    const vcal = generateVCalendar(event, "Meeting, Important!", "Line1\nLine2");
+
+    assert.ok(vcal.includes("SUMMARY:Meeting\\, Important!"), "Should escape comma in summary");
+    assert.ok(vcal.includes("LOCATION:Room A\\; Building 1"), "Should escape semicolon in location");
+    assert.ok(vcal.includes("DESCRIPTION:Line1\\nLine2"), "Should escape newline in description");
+  });
+
+  it("should handle event without optional fields", () => {
+    const event = {
+      startTime: new Date("2024-03-15T14:00:00Z"),
+      endTime: new Date("2024-03-15T15:00:00Z"),
+      attendees: [],
+    };
+
+    const vcal = generateVCalendar(event, "Simple Meeting", "");
+
+    assert.ok(!vcal.includes("LOCATION:"), "Should not have location");
+    assert.ok(!vcal.includes("ORGANIZER:"), "Should not have organizer");
+    assert.ok(!vcal.includes("ATTENDEE:"), "Should not have attendees");
+    assert.ok(!vcal.includes("DESCRIPTION:"), "Should not have empty description");
+  });
+});
+
+describe("convertToEml with calendar events", () => {
+  it("should include text/calendar part for calendar events", () => {
+    const parsed = {
+      subject: "Team Meeting",
+      from: "organizer@example.com",
+      recipients: [{ name: "Attendee", email: "attendee@example.com", type: "to" as const }],
+      date: new Date("2024-03-15T10:00:00Z"),
+      body: "Please join the meeting",
+      attachments: [],
+      calendarEvent: {
+        startTime: new Date("2024-03-15T14:00:00Z"),
+        endTime: new Date("2024-03-15T15:00:00Z"),
+        location: "Conference Room",
+        organizer: "organizer@example.com",
+        attendees: ["attendee@example.com"],
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("multipart/alternative"), "Should use multipart/alternative");
+    assert.ok(eml.includes("text/plain"), "Should have text/plain part");
+    assert.ok(eml.includes("text/calendar"), "Should have text/calendar part");
+    assert.ok(eml.includes('charset="utf-8"; method=REQUEST'), "Should have calendar charset and method");
+    assert.ok(eml.includes("BEGIN:VCALENDAR"), "Should contain VCALENDAR");
+    assert.ok(eml.includes("BEGIN:VEVENT"), "Should contain VEVENT");
+    assert.ok(eml.includes("DTSTART:20240315T140000Z"), "Should have correct start time");
+    assert.ok(eml.includes("DTEND:20240315T150000Z"), "Should have correct end time");
+    assert.ok(eml.includes("LOCATION:Conference Room"), "Should have location");
+  });
+
+  it("should include both HTML and calendar parts when both are present", () => {
+    const parsed = {
+      subject: "Team Meeting",
+      from: "organizer@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Please join the meeting",
+      bodyHtml: "<p>Please join the meeting</p>",
+      attachments: [],
+      calendarEvent: {
+        startTime: new Date("2024-03-15T14:00:00Z"),
+        endTime: new Date("2024-03-15T15:00:00Z"),
+        attendees: [],
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("multipart/alternative"), "Should use multipart/alternative");
+    assert.ok(eml.includes("text/plain"), "Should have text/plain part");
+    assert.ok(eml.includes("text/html"), "Should have text/html part");
+    assert.ok(eml.includes("text/calendar"), "Should have text/calendar part");
+  });
+
+  it("should handle calendar event with attachments", () => {
+    const parsed = {
+      subject: "Meeting with Agenda",
+      from: "organizer@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Agenda attached",
+      attachments: [
+        {
+          fileName: "agenda.pdf",
+          content: new Uint8Array([37, 80, 68, 70]),
+          contentType: "application/pdf",
+        },
+      ],
+      calendarEvent: {
+        startTime: new Date("2024-03-15T14:00:00Z"),
+        endTime: new Date("2024-03-15T15:00:00Z"),
+        attendees: [],
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("multipart/mixed"), "Should use multipart/mixed for attachments");
+    assert.ok(eml.includes("multipart/alternative"), "Should have multipart/alternative for content");
+    assert.ok(eml.includes("text/calendar"), "Should have calendar part");
+    assert.ok(eml.includes("application/pdf"), "Should have PDF attachment");
+  });
+
+  it("should not include calendar part for regular emails", () => {
+    const parsed = {
+      subject: "Regular Email",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Just a regular email",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(!eml.includes("text/calendar"), "Should not have text/calendar");
+    assert.ok(!eml.includes("BEGIN:VCALENDAR"), "Should not have VCALENDAR");
+  });
+
+  it("should include all attendees from the event", () => {
+    const parsed = {
+      subject: "Group Meeting",
+      from: "organizer@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Meeting notes",
+      attachments: [],
+      calendarEvent: {
+        startTime: new Date("2024-03-15T14:00:00Z"),
+        endTime: new Date("2024-03-15T15:00:00Z"),
+        organizer: "organizer@example.com",
+        attendees: ["alice@example.com", "bob@example.com", "charlie@example.com"],
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("ATTENDEE:mailto:alice@example.com"), "Should have Alice as attendee");
+    assert.ok(eml.includes("ATTENDEE:mailto:bob@example.com"), "Should have Bob as attendee");
+    assert.ok(eml.includes("ATTENDEE:mailto:charlie@example.com"), "Should have Charlie as attendee");
+    assert.ok(eml.includes("ORGANIZER:mailto:organizer@example.com"), "Should have organizer");
   });
 });

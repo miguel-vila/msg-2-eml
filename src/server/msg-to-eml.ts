@@ -27,6 +27,12 @@ import {
   PidTagReplyRecipientNames,
   PidTagPriority,
   PidTagImportance,
+  PidTagMessageClass,
+  PidLidAppointmentStartWhole,
+  PidLidAppointmentEndWhole,
+  PidLidLocation,
+  PidLidToAttendeesString,
+  PidLidCcAttendeesString,
 } from "msg-parser";
 import { decompressRTF } from "@kenjiuno/decompressrtf";
 import { deEncapsulateSync } from "rtf-stream-parser";
@@ -54,6 +60,14 @@ interface MessageHeaders {
   priority?: number; // 1-5 scale (1=highest, 5=lowest)
 }
 
+interface CalendarEvent {
+  startTime: Date;
+  endTime: Date;
+  location?: string;
+  organizer?: string;
+  attendees: string[];
+}
+
 interface ParsedMsg {
   subject: string;
   from: string;
@@ -63,6 +77,7 @@ interface ParsedMsg {
   bodyHtml?: string;
   attachments: Attachment[];
   headers?: MessageHeaders;
+  calendarEvent?: CalendarEvent;
 }
 
 function generateBoundary(): string {
@@ -455,6 +470,139 @@ export function mapToXPriority(priority: number | undefined, importance: number 
   return undefined;
 }
 
+/**
+ * Formats a Date as an iCalendar date-time string in UTC.
+ * Format: YYYYMMDDTHHMMSSZ
+ */
+export function formatICalDateTime(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = (date.getUTCMonth() + 1).toString().padStart(2, "0");
+  const day = date.getUTCDate().toString().padStart(2, "0");
+  const hours = date.getUTCHours().toString().padStart(2, "0");
+  const minutes = date.getUTCMinutes().toString().padStart(2, "0");
+  const seconds = date.getUTCSeconds().toString().padStart(2, "0");
+  return `${year}${month}${day}T${hours}${minutes}${seconds}Z`;
+}
+
+/**
+ * Generates a unique identifier for an iCalendar event.
+ * Uses the current timestamp and a random component.
+ */
+function generateUID(): string {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 10);
+  return `${timestamp}-${random}@msg-to-eml`;
+}
+
+/**
+ * Escapes special characters in iCalendar text values.
+ * Backslash, semicolon, comma, and newlines need escaping.
+ */
+export function escapeICalText(text: string): string {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\r\n/g, "\\n")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\n");
+}
+
+/**
+ * Folds iCalendar content lines at 75 octets as per RFC 5545.
+ * Continuation lines start with a single space.
+ */
+export function foldICalLine(line: string): string {
+  if (line.length <= 75) {
+    return line;
+  }
+
+  const result: string[] = [];
+  let remaining = line;
+
+  // First line can be up to 75 chars
+  result.push(remaining.substring(0, 75));
+  remaining = remaining.substring(75);
+
+  // Subsequent lines are prefixed with space, so content is up to 74 chars
+  while (remaining.length > 0) {
+    result.push(" " + remaining.substring(0, 74));
+    remaining = remaining.substring(74);
+  }
+
+  return result.join("\r\n");
+}
+
+/**
+ * Parses an attendee string (semicolon-separated list) into individual email addresses.
+ */
+export function parseAttendeeString(attendeesStr: string | undefined): string[] {
+  if (!attendeesStr) return [];
+  return attendeesStr
+    .split(";")
+    .map((a) => a.trim())
+    .filter((a) => a.length > 0);
+}
+
+/**
+ * Generates a VCALENDAR string with a VEVENT for the given calendar event.
+ */
+export function generateVCalendar(event: CalendarEvent, subject: string, description: string): string {
+  const lines: string[] = [];
+
+  lines.push("BEGIN:VCALENDAR");
+  lines.push("VERSION:2.0");
+  lines.push("PRODID:-//msg-to-eml//NONSGML v1.0//EN");
+  lines.push("METHOD:REQUEST");
+
+  lines.push("BEGIN:VEVENT");
+  lines.push(foldICalLine(`UID:${generateUID()}`));
+  lines.push(`DTSTAMP:${formatICalDateTime(new Date())}`);
+  lines.push(`DTSTART:${formatICalDateTime(event.startTime)}`);
+  lines.push(`DTEND:${formatICalDateTime(event.endTime)}`);
+  lines.push(foldICalLine(`SUMMARY:${escapeICalText(subject)}`));
+
+  if (description) {
+    lines.push(foldICalLine(`DESCRIPTION:${escapeICalText(description)}`));
+  }
+
+  if (event.location) {
+    lines.push(foldICalLine(`LOCATION:${escapeICalText(event.location)}`));
+  }
+
+  if (event.organizer) {
+    // Format organizer - if it looks like an email, use MAILTO
+    if (event.organizer.includes("@")) {
+      lines.push(foldICalLine(`ORGANIZER:mailto:${event.organizer}`));
+    } else {
+      lines.push(foldICalLine(`ORGANIZER;CN=${escapeICalText(event.organizer)}:mailto:noreply@unknown`));
+    }
+  }
+
+  // Add attendees
+  for (const attendee of event.attendees) {
+    if (attendee.includes("@")) {
+      lines.push(foldICalLine(`ATTENDEE:mailto:${attendee}`));
+    } else {
+      lines.push(foldICalLine(`ATTENDEE;CN=${escapeICalText(attendee)}:mailto:noreply@unknown`));
+    }
+  }
+
+  lines.push("END:VEVENT");
+  lines.push("END:VCALENDAR");
+
+  return lines.join("\r\n");
+}
+
+/**
+ * Checks if a message class indicates a calendar appointment.
+ */
+export function isCalendarMessage(messageClass: string | undefined): boolean {
+  if (!messageClass) return false;
+  const normalized = messageClass.toLowerCase();
+  return normalized === "ipm.appointment" || normalized.startsWith("ipm.appointment.");
+}
+
 function parseRecipient(recipient: MsgRecipient): ParsedRecipient {
   const name = recipient.getProperty<string>(PidTagDisplayName) || "";
   const email = recipient.getProperty<string>(PidTagEmailAddress) || name;
@@ -754,6 +902,38 @@ function parseMsgFromMsg(msg: Msg): ParsedMsg {
   if (replyTo) headers.replyTo = replyTo;
   if (xPriority !== undefined) headers.priority = xPriority;
 
+  // Check if this is a calendar appointment
+  const messageClass = msg.getProperty<string>(PidTagMessageClass);
+  let calendarEvent: CalendarEvent | undefined;
+
+  if (isCalendarMessage(messageClass)) {
+    const startTime = msg.getProperty<Date>(PidLidAppointmentStartWhole);
+    const endTime = msg.getProperty<Date>(PidLidAppointmentEndWhole);
+
+    if (startTime && endTime) {
+      const location = msg.getProperty<string>(PidLidLocation);
+      const toAttendees = msg.getProperty<string>(PidLidToAttendeesString);
+      const ccAttendees = msg.getProperty<string>(PidLidCcAttendeesString);
+
+      // Combine To and Cc attendees
+      const attendees = [
+        ...parseAttendeeString(toAttendees),
+        ...parseAttendeeString(ccAttendees),
+      ];
+
+      // Use sender as organizer
+      const organizer = senderEmail || senderName;
+
+      calendarEvent = {
+        startTime,
+        endTime,
+        location: location || undefined,
+        organizer: organizer || undefined,
+        attendees,
+      };
+    }
+  }
+
   return {
     subject,
     from,
@@ -763,6 +943,7 @@ function parseMsgFromMsg(msg: Msg): ParsedMsg {
     bodyHtml: bodyHtml || undefined,
     attachments,
     headers: Object.keys(headers).length > 0 ? headers : undefined,
+    calendarEvent,
   };
 }
 
@@ -773,6 +954,7 @@ export function parseMsg(buffer: ArrayBuffer): ParsedMsg {
 
 export function convertToEml(parsed: ParsedMsg): string {
   const hasHtml = !!parsed.bodyHtml;
+  const hasCalendar = !!parsed.calendarEvent;
 
   // Separate inline attachments (with contentId) from regular attachments
   const inlineAttachments = parsed.attachments.filter((a) => a.contentId);
@@ -855,6 +1037,18 @@ export function convertToEml(parsed: ParsedMsg): string {
     return part;
   };
 
+  // Helper to generate the text/calendar part
+  const generateCalendarPart = (): string => {
+    if (!parsed.calendarEvent) return "";
+    const vcalendar = generateVCalendar(parsed.calendarEvent, parsed.subject, parsed.body);
+    let part = "";
+    part += `Content-Type: text/calendar; charset="utf-8"; method=REQUEST\r\n`;
+    part += `Content-Transfer-Encoding: 7bit\r\n`;
+    part += `\r\n`;
+    part += vcalendar;
+    return part;
+  };
+
   // Helper to generate multipart/alternative content
   const generateAlternativePart = (boundary: string): string => {
     let part = "";
@@ -863,9 +1057,16 @@ export function convertToEml(parsed: ParsedMsg): string {
     part += `--${boundary}\r\n`;
     part += generateTextPart();
     part += `\r\n`;
-    part += `--${boundary}\r\n`;
-    part += generateHtmlPart();
-    part += `\r\n`;
+    if (hasHtml) {
+      part += `--${boundary}\r\n`;
+      part += generateHtmlPart();
+      part += `\r\n`;
+    }
+    if (hasCalendar) {
+      part += `--${boundary}\r\n`;
+      part += generateCalendarPart();
+      part += `\r\n`;
+    }
     part += `--${boundary}--\r\n`;
     return part;
   };
@@ -904,13 +1105,16 @@ export function convertToEml(parsed: ParsedMsg): string {
   };
 
   // Determine the structure based on content types
-  // Cases:
+  // Cases (updated to handle calendar events):
   // 1. HTML + inline attachments + regular attachments: multipart/mixed > (multipart/related > (multipart/alternative + inline)) + regular
   // 2. HTML + inline attachments only: multipart/related > multipart/alternative + inline
-  // 3. HTML + regular attachments only: multipart/mixed > multipart/alternative + regular
-  // 4. HTML only: multipart/alternative
+  // 3. (HTML or calendar) + regular attachments only: multipart/mixed > multipart/alternative + regular
+  // 4. HTML or calendar only: multipart/alternative
   // 5. Plain + any attachments: multipart/mixed > text/plain + attachments
   // 6. Plain only: text/plain
+
+  // Check if we need multipart/alternative (HTML and/or calendar)
+  const needsAlternative = hasHtml || hasCalendar;
 
   if (hasHtml && hasInlineAttachments && hasRegularAttachments) {
     // Case 1: multipart/mixed > multipart/related > (multipart/alternative + inline) + regular attachments
@@ -942,7 +1146,7 @@ export function convertToEml(parsed: ParsedMsg): string {
       eml += generateAttachmentPart(att, true);
     }
     eml += `--${relatedBoundary}--\r\n`;
-  } else if (hasHtml && hasRegularAttachments) {
+  } else if (needsAlternative && hasRegularAttachments) {
     // Case 3: multipart/mixed > multipart/alternative + regular attachments
     eml += `Content-Type: multipart/mixed; boundary="${mixedBoundary}"\r\n`;
     eml += `\r\n`;
@@ -953,8 +1157,8 @@ export function convertToEml(parsed: ParsedMsg): string {
       eml += generateAttachmentPart(att, false);
     }
     eml += `--${mixedBoundary}--\r\n`;
-  } else if (hasHtml) {
-    // Case 4: multipart/alternative only
+  } else if (needsAlternative) {
+    // Case 4: multipart/alternative only (HTML and/or calendar)
     eml += generateAlternativePart(altBoundary);
   } else if (hasAttachments) {
     // Case 5: multipart/mixed > text/plain + attachments
