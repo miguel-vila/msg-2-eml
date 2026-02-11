@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { convertToEml, formatSender, mapToXPriority, foldHeader, extractBodyFromRtf, parseMsg } from "./msg-to-eml.js";
+import { convertToEml, formatSender, mapToXPriority, foldHeader, extractBodyFromRtf, parseMsg, encodeRfc2231, formatFilenameParams } from "./msg-to-eml.js";
 
 /**
  * Creates an uncompressed RTF format for PidTagRtfCompressed.
@@ -899,5 +899,185 @@ ${innerEml}\r
 
     assert.ok(eml.includes("From: outer@example.com"), "Should contain outer embedded message");
     assert.ok(eml.includes("From: inner@example.com"), "Should contain inner embedded message");
+  });
+});
+
+describe("encodeRfc2231", () => {
+  it("should encode ASCII filename without special characters", () => {
+    const result = encodeRfc2231("document.pdf");
+    assert.strictEqual(result, "UTF-8''document.pdf");
+  });
+
+  it("should encode non-ASCII characters using percent encoding", () => {
+    const result = encodeRfc2231("naïve.pdf");
+    // ï is UTF-8 bytes: 0xC3 0xAF
+    assert.strictEqual(result, "UTF-8''na%C3%AFve.pdf");
+  });
+
+  it("should encode multiple non-ASCII characters", () => {
+    const result = encodeRfc2231("Café résumé.pdf");
+    // é is UTF-8 bytes: 0xC3 0xA9
+    // Space is 0x20, needs encoding
+    assert.strictEqual(result, "UTF-8''Caf%C3%A9%20r%C3%A9sum%C3%A9.pdf");
+  });
+
+  it("should encode special characters like spaces", () => {
+    const result = encodeRfc2231("my document.pdf");
+    assert.strictEqual(result, "UTF-8''my%20document.pdf");
+  });
+
+  it("should preserve hyphens, dots, and underscores", () => {
+    const result = encodeRfc2231("my-doc_2024.final.pdf");
+    assert.strictEqual(result, "UTF-8''my-doc_2024.final.pdf");
+  });
+
+  it("should encode parentheses and brackets", () => {
+    const result = encodeRfc2231("report (final).pdf");
+    assert.strictEqual(result, "UTF-8''report%20%28final%29.pdf");
+  });
+
+  it("should encode Japanese characters", () => {
+    const result = encodeRfc2231("文書.pdf");
+    // 文 = E6 96 87, 書 = E6 9B B8
+    assert.strictEqual(result, "UTF-8''%E6%96%87%E6%9B%B8.pdf");
+  });
+
+  it("should encode emoji", () => {
+    const result = encodeRfc2231("📄document.pdf");
+    // 📄 = F0 9F 93 84
+    assert.strictEqual(result, "UTF-8''%F0%9F%93%84document.pdf");
+  });
+});
+
+describe("formatFilenameParams", () => {
+  it("should return simple quoted format for ASCII filenames", () => {
+    const result = formatFilenameParams("document.pdf");
+    assert.strictEqual(result.name, 'name="document.pdf"');
+    assert.strictEqual(result.disposition, 'filename="document.pdf"');
+  });
+
+  it("should return RFC 2231 encoded format for non-ASCII filenames", () => {
+    const result = formatFilenameParams("naïve.pdf");
+    assert.strictEqual(result.name, "name*=UTF-8''na%C3%AFve.pdf");
+    assert.strictEqual(result.disposition, "filename*=UTF-8''na%C3%AFve.pdf");
+  });
+
+  it("should return RFC 2231 encoded format for filenames with spaces", () => {
+    const result = formatFilenameParams("my document.pdf");
+    // ASCII with spaces should still use simple format
+    assert.strictEqual(result.name, 'name="my document.pdf"');
+    assert.strictEqual(result.disposition, 'filename="my document.pdf"');
+  });
+});
+
+describe("convertToEml with non-ASCII filenames", () => {
+  it("should use RFC 2231 encoding for non-ASCII attachment filenames", () => {
+    const parsed = {
+      subject: "Test with special filename",
+      from: "sender@example.com",
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date(),
+      body: "See attached",
+      attachments: [
+        {
+          fileName: "naïve.pdf",
+          content: new Uint8Array([37, 80, 68, 70]),
+          contentType: "application/pdf",
+        },
+      ],
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should use RFC 2231 encoded filename
+    assert.ok(eml.includes("name*=UTF-8''na%C3%AFve.pdf"), "Content-Type should use RFC 2231 encoding");
+    assert.ok(eml.includes("filename*=UTF-8''na%C3%AFve.pdf"), "Content-Disposition should use RFC 2231 encoding");
+    // Should NOT contain the unencoded filename in quotes
+    assert.ok(!eml.includes('name="naïve.pdf"'), "Should not use simple quoted format for non-ASCII");
+    assert.ok(!eml.includes('filename="naïve.pdf"'), "Should not use simple quoted format for non-ASCII");
+  });
+
+  it("should keep ASCII filenames in simple quoted format", () => {
+    const parsed = {
+      subject: "Test with ASCII filename",
+      from: "sender@example.com",
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date(),
+      body: "See attached",
+      attachments: [
+        {
+          fileName: "document.pdf",
+          content: new Uint8Array([37, 80, 68, 70]),
+          contentType: "application/pdf",
+        },
+      ],
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should use simple quoted format
+    assert.ok(eml.includes('name="document.pdf"'), "Content-Type should use simple quoted format");
+    assert.ok(eml.includes('filename="document.pdf"'), "Content-Disposition should use simple quoted format");
+    // Should NOT contain RFC 2231 encoding
+    assert.ok(!eml.includes("name*="), "Should not use RFC 2231 for ASCII filenames");
+    assert.ok(!eml.includes("filename*="), "Should not use RFC 2231 for ASCII filenames");
+  });
+
+  it("should handle inline attachments with non-ASCII filenames", () => {
+    const parsed = {
+      subject: "Test with inline non-ASCII",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Text",
+      bodyHtml: '<img src="cid:img1">',
+      attachments: [
+        {
+          fileName: "übung.png",
+          content: new Uint8Array([137, 80, 78, 71]),
+          contentType: "image/png",
+          contentId: "img1",
+        },
+      ],
+    };
+
+    const eml = convertToEml(parsed);
+
+    // ü is UTF-8 bytes: 0xC3 0xBC
+    assert.ok(eml.includes("name*=UTF-8''%C3%BCbung.png"), "Inline Content-Type should use RFC 2231");
+    assert.ok(eml.includes("filename*=UTF-8''%C3%BCbung.png"), "Inline Content-Disposition should use RFC 2231");
+    assert.ok(eml.includes("Content-Disposition: inline"), "Should have inline disposition");
+  });
+
+  it("should handle mixed ASCII and non-ASCII filenames", () => {
+    const parsed = {
+      subject: "Mixed filenames",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Multiple attachments",
+      attachments: [
+        {
+          fileName: "ascii-doc.pdf",
+          content: new Uint8Array([37, 80, 68, 70]),
+          contentType: "application/pdf",
+        },
+        {
+          fileName: "日本語.txt",
+          content: new Uint8Array([72, 101, 108, 108, 111]),
+          contentType: "text/plain",
+        },
+      ],
+    };
+
+    const eml = convertToEml(parsed);
+
+    // ASCII filename should use simple format
+    assert.ok(eml.includes('name="ascii-doc.pdf"'));
+    assert.ok(eml.includes('filename="ascii-doc.pdf"'));
+
+    // Japanese filename should use RFC 2231
+    assert.ok(eml.includes("name*=UTF-8''"), "Japanese filename should use RFC 2231");
+    assert.ok(!eml.includes('name="日本語.txt"'), "Should not use simple quoted format for Japanese");
   });
 });

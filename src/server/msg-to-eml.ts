@@ -236,6 +236,74 @@ function findSafeBreakPoint(str: string, maxPos: number): number {
   return bestBreak;
 }
 
+/**
+ * Checks if a string contains only ASCII characters.
+ */
+function isAscii(str: string): boolean {
+  for (let i = 0; i < str.length; i++) {
+    if (str.charCodeAt(i) > 127) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Encodes a filename according to RFC 2231 for non-ASCII characters.
+ * Returns the encoded format: UTF-8''<percent-encoded-value>
+ *
+ * RFC 2231 specifies that:
+ * - attr*=charset'language'encoded-value
+ * - We use UTF-8 charset and leave language empty
+ * - Characters are percent-encoded (similar to URL encoding)
+ */
+export function encodeRfc2231(filename: string): string {
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(filename);
+  let encoded = "";
+
+  for (const byte of bytes) {
+    // RFC 2231 allows: ALPHA / DIGIT / "!" / "#" / "$" / "&" / "+" / "-" / "." /
+    // "^" / "_" / "`" / "|" / "~" and attribute-char which excludes "*", "'", "%"
+    // For simplicity and safety, we only allow alphanumeric, -, ., and _
+    if (
+      (byte >= 0x30 && byte <= 0x39) || // 0-9
+      (byte >= 0x41 && byte <= 0x5A) || // A-Z
+      (byte >= 0x61 && byte <= 0x7A) || // a-z
+      byte === 0x2D || // -
+      byte === 0x2E || // .
+      byte === 0x5F    // _
+    ) {
+      encoded += String.fromCharCode(byte);
+    } else {
+      // Percent-encode the byte
+      encoded += "%" + byte.toString(16).toUpperCase().padStart(2, "0");
+    }
+  }
+
+  return `UTF-8''${encoded}`;
+}
+
+/**
+ * Generates Content-Type and Content-Disposition parameters for a filename.
+ * Uses RFC 2231 encoding (filename*=) for non-ASCII filenames,
+ * otherwise uses the simple quoted form (filename=).
+ */
+export function formatFilenameParams(filename: string): { name: string; disposition: string } {
+  if (isAscii(filename)) {
+    return {
+      name: `name="${filename}"`,
+      disposition: `filename="${filename}"`,
+    };
+  } else {
+    const encoded = encodeRfc2231(filename);
+    return {
+      name: `name*=${encoded}`,
+      disposition: `filename*=${encoded}`,
+    };
+  }
+}
+
 function getMimeType(fileName: string): string {
   const ext = fileName.split(".").pop()?.toLowerCase() || "";
   const mimeTypes: Record<string, string> = {
@@ -694,13 +762,14 @@ export function convertToEml(parsed: ParsedMsg): string {
 
   // Helper to generate attachment part
   const generateAttachmentPart = (att: Attachment, inline: boolean): string => {
+    const filenameParams = formatFilenameParams(att.fileName);
     let part = "";
-    part += `Content-Type: ${att.contentType}; name="${att.fileName}"\r\n`;
+    part += `Content-Type: ${att.contentType}; ${filenameParams.name}\r\n`;
     if (inline && att.contentId) {
       part += `Content-ID: <${att.contentId}>\r\n`;
-      part += `Content-Disposition: inline; filename="${att.fileName}"\r\n`;
+      part += `Content-Disposition: inline; ${filenameParams.disposition}\r\n`;
     } else {
-      part += `Content-Disposition: attachment; filename="${att.fileName}"\r\n`;
+      part += `Content-Disposition: attachment; ${filenameParams.disposition}\r\n`;
     }
 
     // For message/rfc822 (embedded emails), use 7bit encoding since the content
