@@ -552,6 +552,151 @@ describe("convertToEml with message headers", () => {
   });
 });
 
+describe("convertToEml with inline images", () => {
+  it("should use Content-Disposition: inline for attachments with contentId", () => {
+    const parsed = {
+      subject: "Email with inline image",
+      from: "sender@example.com",
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date(),
+      body: "See the image",
+      bodyHtml: '<html><body><img src="cid:image001@domain.com"></body></html>',
+      attachments: [
+        {
+          fileName: "image.png",
+          content: new Uint8Array([137, 80, 78, 71]), // PNG magic bytes
+          contentType: "image/png",
+          contentId: "image001@domain.com",
+        },
+      ],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Content-Disposition: inline"), "Should have inline disposition");
+    assert.ok(eml.includes("Content-ID: <image001@domain.com>"), "Should have Content-ID header with angle brackets");
+    assert.ok(eml.includes("multipart/related"), "Should use multipart/related for inline images");
+  });
+
+  it("should use multipart/related for HTML with inline images", () => {
+    const parsed = {
+      subject: "HTML with inline image",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Plain text",
+      bodyHtml: '<img src="cid:img1">',
+      attachments: [
+        {
+          fileName: "test.jpg",
+          content: new Uint8Array([255, 216, 255]), // JPEG magic bytes
+          contentType: "image/jpeg",
+          contentId: "img1",
+        },
+      ],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("multipart/related"), "Should use multipart/related");
+    assert.ok(eml.includes("multipart/alternative"), "Should contain multipart/alternative for text+html");
+  });
+
+  it("should handle mixed inline and regular attachments", () => {
+    const parsed = {
+      subject: "Mixed attachments",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "See attached",
+      bodyHtml: '<img src="cid:inline1"><p>Check the attachment</p>',
+      attachments: [
+        {
+          fileName: "inline-image.png",
+          content: new Uint8Array([137, 80, 78, 71]),
+          contentType: "image/png",
+          contentId: "inline1",
+        },
+        {
+          fileName: "document.pdf",
+          content: new Uint8Array([37, 80, 68, 70]), // PDF magic bytes
+          contentType: "application/pdf",
+        },
+      ],
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should have multipart/mixed at the top level
+    assert.ok(eml.includes("multipart/mixed"), "Should have multipart/mixed for regular attachments");
+    assert.ok(eml.includes("multipart/related"), "Should have multipart/related for inline images");
+
+    // Inline attachment should have Content-ID and inline disposition
+    assert.ok(eml.includes("Content-ID: <inline1>"), "Inline attachment should have Content-ID");
+    assert.ok(eml.includes("Content-Disposition: inline"), "Inline attachment should have inline disposition");
+
+    // Regular attachment should have attachment disposition
+    assert.ok(eml.includes('Content-Disposition: attachment; filename="document.pdf"'), "Regular attachment should have attachment disposition");
+  });
+
+  it("should not add Content-ID header for regular attachments", () => {
+    const parsed = {
+      subject: "Regular attachment only",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "See attached",
+      attachments: [
+        {
+          fileName: "document.pdf",
+          content: new Uint8Array([37, 80, 68, 70]),
+          contentType: "application/pdf",
+        },
+      ],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(!eml.includes("Content-ID:"), "Regular attachment should not have Content-ID");
+    assert.ok(eml.includes("Content-Disposition: attachment"), "Should have attachment disposition");
+    assert.ok(!eml.includes("multipart/related"), "Should not use multipart/related without inline images");
+  });
+
+  it("should handle multiple inline images", () => {
+    const parsed = {
+      subject: "Multiple inline images",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Images",
+      bodyHtml: '<img src="cid:img1"><img src="cid:img2">',
+      attachments: [
+        {
+          fileName: "image1.png",
+          content: new Uint8Array([137, 80, 78, 71]),
+          contentType: "image/png",
+          contentId: "img1",
+        },
+        {
+          fileName: "image2.jpg",
+          content: new Uint8Array([255, 216, 255]),
+          contentType: "image/jpeg",
+          contentId: "img2",
+        },
+      ],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Content-ID: <img1>"), "Should include first Content-ID");
+    assert.ok(eml.includes("Content-ID: <img2>"), "Should include second Content-ID");
+
+    // Count inline dispositions
+    const inlineCount = (eml.match(/Content-Disposition: inline/g) || []).length;
+    assert.strictEqual(inlineCount, 2, "Should have two inline dispositions");
+  });
+});
+
 describe("extractBodyFromRtf", () => {
   it("should extract plain text from simple RTF", () => {
     // Simple RTF with plain text

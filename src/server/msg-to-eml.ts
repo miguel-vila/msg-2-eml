@@ -19,6 +19,7 @@ import {
   PidTagAttachLongFilename,
   PidTagAttachFilename,
   PidTagAttachMimeTag,
+  PidTagAttachContentId,
   PidTagInternetMessageId,
   PidTagInReplyToId,
   PidTagInternetReferences,
@@ -34,6 +35,7 @@ interface Attachment {
   fileName: string;
   content: Uint8Array;
   contentType: string;
+  contentId?: string;
 }
 
 interface ParsedRecipient {
@@ -299,11 +301,13 @@ function parseAttachment(attachment: MsgAttachment): Attachment | null {
 
   const mimeTag = attachment.getProperty<string>(PidTagAttachMimeTag);
   const contentType = mimeTag || getMimeType(fileName);
+  const contentId = attachment.getProperty<string>(PidTagAttachContentId);
 
   return {
     fileName,
     content: new Uint8Array(content),
     contentType,
+    contentId: contentId || undefined,
   };
 }
 
@@ -550,9 +554,18 @@ export function parseMsg(buffer: ArrayBuffer): ParsedMsg {
 }
 
 export function convertToEml(parsed: ParsedMsg): string {
-  const hasAttachments = parsed.attachments.length > 0;
   const hasHtml = !!parsed.bodyHtml;
-  const boundary = generateBoundary();
+
+  // Separate inline attachments (with contentId) from regular attachments
+  const inlineAttachments = parsed.attachments.filter((a) => a.contentId);
+  const regularAttachments = parsed.attachments.filter((a) => !a.contentId);
+
+  const hasInlineAttachments = inlineAttachments.length > 0;
+  const hasRegularAttachments = regularAttachments.length > 0;
+  const hasAttachments = hasInlineAttachments || hasRegularAttachments;
+
+  const mixedBoundary = generateBoundary();
+  const relatedBoundary = generateBoundary();
   const altBoundary = generateBoundary();
 
   const toRecipients = parsed.recipients.filter((r) => r.type === "to");
@@ -598,64 +611,127 @@ export function convertToEml(parsed: ParsedMsg): string {
     }
   }
 
-  if (hasAttachments) {
-    eml += `Content-Type: multipart/mixed; boundary="${boundary}"\r\n`;
-    eml += `\r\n`;
-    eml += `--${boundary}\r\n`;
+  // Helper to generate the text/plain part
+  const generateTextPart = (): string => {
+    let part = "";
+    part += `Content-Type: text/plain; charset="utf-8"\r\n`;
+    part += `Content-Transfer-Encoding: quoted-printable\r\n`;
+    part += `\r\n`;
+    part += encodeQuotedPrintable(parsed.body);
+    return part;
+  };
 
-    if (hasHtml) {
-      eml += `Content-Type: multipart/alternative; boundary="${altBoundary}"\r\n`;
-      eml += `\r\n`;
-      eml += `--${altBoundary}\r\n`;
-      eml += `Content-Type: text/plain; charset="utf-8"\r\n`;
-      eml += `Content-Transfer-Encoding: quoted-printable\r\n`;
-      eml += `\r\n`;
-      eml += encodeQuotedPrintable(parsed.body);
-      eml += `\r\n`;
-      eml += `--${altBoundary}\r\n`;
-      eml += `Content-Type: text/html; charset="utf-8"\r\n`;
-      eml += `Content-Transfer-Encoding: quoted-printable\r\n`;
-      eml += `\r\n`;
-      eml += encodeQuotedPrintable(parsed.bodyHtml!);
-      eml += `\r\n`;
-      eml += `--${altBoundary}--\r\n`;
+  // Helper to generate the text/html part
+  const generateHtmlPart = (): string => {
+    let part = "";
+    part += `Content-Type: text/html; charset="utf-8"\r\n`;
+    part += `Content-Transfer-Encoding: quoted-printable\r\n`;
+    part += `\r\n`;
+    part += encodeQuotedPrintable(parsed.bodyHtml!);
+    return part;
+  };
+
+  // Helper to generate multipart/alternative content
+  const generateAlternativePart = (boundary: string): string => {
+    let part = "";
+    part += `Content-Type: multipart/alternative; boundary="${boundary}"\r\n`;
+    part += `\r\n`;
+    part += `--${boundary}\r\n`;
+    part += generateTextPart();
+    part += `\r\n`;
+    part += `--${boundary}\r\n`;
+    part += generateHtmlPart();
+    part += `\r\n`;
+    part += `--${boundary}--\r\n`;
+    return part;
+  };
+
+  // Helper to generate attachment part
+  const generateAttachmentPart = (att: Attachment, inline: boolean): string => {
+    let part = "";
+    part += `Content-Type: ${att.contentType}; name="${att.fileName}"\r\n`;
+    if (inline && att.contentId) {
+      part += `Content-ID: <${att.contentId}>\r\n`;
+      part += `Content-Disposition: inline; filename="${att.fileName}"\r\n`;
     } else {
-      eml += `Content-Type: text/plain; charset="utf-8"\r\n`;
-      eml += `Content-Transfer-Encoding: quoted-printable\r\n`;
-      eml += `\r\n`;
-      eml += encodeQuotedPrintable(parsed.body);
-      eml += `\r\n`;
+      part += `Content-Disposition: attachment; filename="${att.fileName}"\r\n`;
     }
+    part += `Content-Transfer-Encoding: base64\r\n`;
+    part += `\r\n`;
+    const base64 = encodeBase64(att.content);
+    for (let i = 0; i < base64.length; i += 76) {
+      part += base64.slice(i, i + 76) + "\r\n";
+    }
+    return part;
+  };
 
-    for (const att of parsed.attachments) {
-      eml += `--${boundary}\r\n`;
-      eml += `Content-Type: ${att.contentType}; name="${att.fileName}"\r\n`;
-      eml += `Content-Disposition: attachment; filename="${att.fileName}"\r\n`;
-      eml += `Content-Transfer-Encoding: base64\r\n`;
-      eml += `\r\n`;
-      const base64 = encodeBase64(att.content);
-      for (let i = 0; i < base64.length; i += 76) {
-        eml += base64.slice(i, i + 76) + "\r\n";
-      }
+  // Determine the structure based on content types
+  // Cases:
+  // 1. HTML + inline attachments + regular attachments: multipart/mixed > (multipart/related > (multipart/alternative + inline)) + regular
+  // 2. HTML + inline attachments only: multipart/related > multipart/alternative + inline
+  // 3. HTML + regular attachments only: multipart/mixed > multipart/alternative + regular
+  // 4. HTML only: multipart/alternative
+  // 5. Plain + any attachments: multipart/mixed > text/plain + attachments
+  // 6. Plain only: text/plain
+
+  if (hasHtml && hasInlineAttachments && hasRegularAttachments) {
+    // Case 1: multipart/mixed > multipart/related > (multipart/alternative + inline) + regular attachments
+    eml += `Content-Type: multipart/mixed; boundary="${mixedBoundary}"\r\n`;
+    eml += `\r\n`;
+    eml += `--${mixedBoundary}\r\n`;
+    eml += `Content-Type: multipart/related; boundary="${relatedBoundary}"\r\n`;
+    eml += `\r\n`;
+    eml += `--${relatedBoundary}\r\n`;
+    eml += generateAlternativePart(altBoundary);
+    for (const att of inlineAttachments) {
+      eml += `--${relatedBoundary}\r\n`;
+      eml += generateAttachmentPart(att, true);
     }
-    eml += `--${boundary}--\r\n`;
+    eml += `--${relatedBoundary}--\r\n`;
+    for (const att of regularAttachments) {
+      eml += `--${mixedBoundary}\r\n`;
+      eml += generateAttachmentPart(att, false);
+    }
+    eml += `--${mixedBoundary}--\r\n`;
+  } else if (hasHtml && hasInlineAttachments) {
+    // Case 2: multipart/related > multipart/alternative + inline attachments
+    eml += `Content-Type: multipart/related; boundary="${relatedBoundary}"\r\n`;
+    eml += `\r\n`;
+    eml += `--${relatedBoundary}\r\n`;
+    eml += generateAlternativePart(altBoundary);
+    for (const att of inlineAttachments) {
+      eml += `--${relatedBoundary}\r\n`;
+      eml += generateAttachmentPart(att, true);
+    }
+    eml += `--${relatedBoundary}--\r\n`;
+  } else if (hasHtml && hasRegularAttachments) {
+    // Case 3: multipart/mixed > multipart/alternative + regular attachments
+    eml += `Content-Type: multipart/mixed; boundary="${mixedBoundary}"\r\n`;
+    eml += `\r\n`;
+    eml += `--${mixedBoundary}\r\n`;
+    eml += generateAlternativePart(altBoundary);
+    for (const att of regularAttachments) {
+      eml += `--${mixedBoundary}\r\n`;
+      eml += generateAttachmentPart(att, false);
+    }
+    eml += `--${mixedBoundary}--\r\n`;
   } else if (hasHtml) {
-    eml += `Content-Type: multipart/alternative; boundary="${boundary}"\r\n`;
+    // Case 4: multipart/alternative only
+    eml += generateAlternativePart(altBoundary);
+  } else if (hasAttachments) {
+    // Case 5: multipart/mixed > text/plain + attachments
+    eml += `Content-Type: multipart/mixed; boundary="${mixedBoundary}"\r\n`;
     eml += `\r\n`;
-    eml += `--${boundary}\r\n`;
-    eml += `Content-Type: text/plain; charset="utf-8"\r\n`;
-    eml += `Content-Transfer-Encoding: quoted-printable\r\n`;
+    eml += `--${mixedBoundary}\r\n`;
+    eml += generateTextPart();
     eml += `\r\n`;
-    eml += encodeQuotedPrintable(parsed.body);
-    eml += `\r\n`;
-    eml += `--${boundary}\r\n`;
-    eml += `Content-Type: text/html; charset="utf-8"\r\n`;
-    eml += `Content-Transfer-Encoding: quoted-printable\r\n`;
-    eml += `\r\n`;
-    eml += encodeQuotedPrintable(parsed.bodyHtml!);
-    eml += `\r\n`;
-    eml += `--${boundary}--\r\n`;
+    for (const att of parsed.attachments) {
+      eml += `--${mixedBoundary}\r\n`;
+      eml += generateAttachmentPart(att, false);
+    }
+    eml += `--${mixedBoundary}--\r\n`;
   } else {
+    // Case 6: text/plain only
     eml += `Content-Type: text/plain; charset="utf-8"\r\n`;
     eml += `Content-Transfer-Encoding: quoted-printable\r\n`;
     eml += `\r\n`;
