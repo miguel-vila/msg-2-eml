@@ -7,6 +7,8 @@ import {
   PidLidToAttendeesString,
   PidTagBody,
   PidTagBodyHtml,
+  PidTagConversationIndex,
+  PidTagConversationTopic,
   PidTagImportance,
   PidTagInReplyToId,
   PidTagInternetMessageId,
@@ -102,6 +104,20 @@ export function parseMsgFromMsg(msg: Msg, msgToEmlFromMsg: (msg: Msg) => string)
   const transportMessageHeaders = msg.getProperty<string>(PidTagTransportMessageHeaders);
   if (transportMessageHeaders) {
     headers.transportMessageHeaders = transportMessageHeaders;
+  }
+
+  // Extract conversation threading metadata
+  const conversationIndex = msg.getProperty<number[]>(PidTagConversationIndex);
+  if (conversationIndex && conversationIndex.length > 0) {
+    // Convert binary array to base64 for Thread-Index header
+    const bytes = new Uint8Array(conversationIndex);
+    const binary = String.fromCharCode(...bytes);
+    headers.threadIndex = btoa(binary);
+  }
+
+  const conversationTopic = msg.getProperty<string>(PidTagConversationTopic);
+  if (conversationTopic) {
+    headers.threadTopic = conversationTopic;
   }
 
   // Check if this is a calendar appointment

@@ -125,16 +125,18 @@
   {
     "id": "transport-headers",
     "description": "Preserve original email transport headers from PidTagTransportMessageHeaders (0x007D). This property contains the original headers from when the email was received, including: Received: headers (mail routing), Authentication-Results, DKIM-Signature, SPF results, and X-* headers. These should be included in the EML output to preserve the complete email provenance and authentication chain.",
-    "implemented": false,
+    "implemented": true,
     "priority": 12,
     "testFiles": []
   },
   {
     "id": "conversation-threading",
     "description": "Support email threading metadata. Extract PidTagConversationIndex (0x0071) which contains a binary blob for thread tracking, and PidTagConversationTopic (0x0070) which contains the thread subject. The conversation index can be converted to Thread-Index header for compatibility with email clients that support threading.",
-    "implemented": false,
+    "implemented": true,
     "priority": 13,
-    "testFiles": []
+    "testFiles": [
+      "src/server/msg-to-eml/converter/__tests__/eml.test.ts:convertToEml with conversation threading headers"
+    ]
   },
   {
     "id": "sender-on-behalf",

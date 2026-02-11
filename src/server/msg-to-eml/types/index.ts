@@ -21,6 +21,8 @@ export interface MessageHeaders {
   dispositionNotificationTo?: string; // For read receipt requests
   returnReceiptTo?: string; // For delivery receipt requests
   transportMessageHeaders?: string; // Original transport headers (Received, DKIM, SPF, etc.)
+  threadIndex?: string; // Base64-encoded thread index for email threading (Thread-Index header)
+  threadTopic?: string; // Conversation topic/subject for threading (Thread-Topic header)
 }
 
 export interface CalendarEvent {

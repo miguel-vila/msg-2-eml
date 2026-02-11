@@ -1382,3 +1382,218 @@ DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=example.com;\r
     assert.ok(eml.includes("d=example.com"), "Should preserve DKIM domain");
   });
 });
+
+describe("convertToEml with conversation threading headers", () => {
+  it("should include Thread-Index header when present", () => {
+    // Example Thread-Index: a base64-encoded binary blob
+    // The first 22 bytes represent the header GUID and timestamp
+    const threadIndex = "AQHZDGHRmhV1R06lnVmPq8IAAAAnAA==";
+
+    const parsed = {
+      subject: "Re: Test Thread",
+      from: "sender@example.com",
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        threadIndex,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes(`Thread-Index: ${threadIndex}`), "Should have Thread-Index header");
+  });
+
+  it("should include Thread-Topic header when present", () => {
+    const parsed = {
+      subject: "Re: Test Thread",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        threadTopic: "Test Thread",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Thread-Topic: Test Thread"), "Should have Thread-Topic header");
+  });
+
+  it("should include both Thread-Index and Thread-Topic when present", () => {
+    const threadIndex = "AQHZDGHRmhV1R06lnVmPq8IAAAAnAA==";
+
+    const parsed = {
+      subject: "Re: Important Discussion",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        threadIndex,
+        threadTopic: "Important Discussion",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes(`Thread-Index: ${threadIndex}`), "Should have Thread-Index header");
+    assert.ok(eml.includes("Thread-Topic: Important Discussion"), "Should have Thread-Topic header");
+  });
+
+  it("should not include threading headers when not present", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(!eml.includes("Thread-Index:"), "Should not have Thread-Index header when not present");
+    assert.ok(!eml.includes("Thread-Topic:"), "Should not have Thread-Topic header when not present");
+  });
+
+  it("should encode non-ASCII Thread-Topic with RFC 2047", () => {
+    const parsed = {
+      subject: "Re: 日本語のスレッド",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        threadTopic: "日本語のスレッド",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Thread-Topic: =?UTF-8?B?"), "Should encode non-ASCII Thread-Topic with RFC 2047");
+    assert.ok(!eml.includes("Thread-Topic: 日本語のスレッド"), "Should not contain unencoded non-ASCII topic");
+  });
+
+  it("should place threading headers before Content-Type", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        messageId: "<test@example.com>",
+        threadIndex: "AQHZDGHRmhV1R06lnVmPq8IAAAAnAA==",
+        threadTopic: "Test Thread",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    const threadIndexPos = eml.indexOf("Thread-Index:");
+    const threadTopicPos = eml.indexOf("Thread-Topic:");
+    const contentTypePos = eml.indexOf("Content-Type:");
+
+    assert.ok(threadIndexPos > 0, "Should have Thread-Index header");
+    assert.ok(threadTopicPos > 0, "Should have Thread-Topic header");
+    assert.ok(threadIndexPos < contentTypePos, "Thread-Index should come before Content-Type");
+    assert.ok(threadTopicPos < contentTypePos, "Thread-Topic should come before Content-Type");
+  });
+
+  it("should fold long Thread-Index headers", () => {
+    // A longer thread index with multiple response entries (each response adds 5 bytes)
+    // This simulates a long email thread with many replies
+    const longThreadIndex =
+      "AQHZDGHRmhV1R06lnVmPq8IAAAAnAAEBxg5u0QAAABwAAQHGDm7SAAAAHAABAdkMYdGaFXVHTqWdWY+rwgAAACcAAQHZDGHRmhV1R06lnVmPq8IAAAAnAA==";
+
+    const parsed = {
+      subject: "Re: Re: Re: Long Thread",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        threadIndex: longThreadIndex,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should contain the Thread-Index header
+    assert.ok(eml.includes("Thread-Index:"), "Should have Thread-Index header");
+
+    // The full value should be present (possibly folded)
+    const normalizedEml = eml.replace(/\r\n[\t ]/g, "");
+    assert.ok(normalizedEml.includes(longThreadIndex), "Full Thread-Index value should be present");
+  });
+
+  it("should work alongside other message headers", () => {
+    const parsed = {
+      subject: "Re: Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        messageId: "<reply@example.com>",
+        inReplyTo: "<original@example.com>",
+        references: "<original@example.com>",
+        priority: 3,
+        threadIndex: "AQHZDGHRmhV1R06lnVmPq8IAAAAnAA==",
+        threadTopic: "Test",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Message-ID: <reply@example.com>"), "Should have Message-ID");
+    assert.ok(eml.includes("In-Reply-To: <original@example.com>"), "Should have In-Reply-To");
+    assert.ok(eml.includes("References: <original@example.com>"), "Should have References");
+    assert.ok(eml.includes("X-Priority: 3"), "Should have X-Priority");
+    assert.ok(eml.includes("Thread-Index:"), "Should have Thread-Index");
+    assert.ok(eml.includes("Thread-Topic: Test"), "Should have Thread-Topic");
+  });
+
+  it("should exclude Thread-Index and Thread-Topic from transport headers", () => {
+    const transportHeaders = `Received: from mail.example.com by mx.example.org\r
+Thread-Index: AQHZDGHRmhV1R06lnVmPq8IAAAAnAA==\r
+Thread-Topic: Original Topic\r
+From: sender@example.com`;
+
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        threadIndex: "NewThreadIndex123==",
+        threadTopic: "New Topic",
+        transportMessageHeaders: transportHeaders,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should use our generated headers, not the ones from transport
+    assert.ok(eml.includes("Thread-Index: NewThreadIndex123=="), "Should use generated Thread-Index");
+    assert.ok(eml.includes("Thread-Topic: New Topic"), "Should use generated Thread-Topic");
+
+    // Count occurrences - should have exactly one of each
+    const threadIndexMatches = eml.match(/Thread-Index:/g);
+    const threadTopicMatches = eml.match(/Thread-Topic:/g);
+    assert.strictEqual(threadIndexMatches?.length, 1, "Should have exactly one Thread-Index header");
+    assert.strictEqual(threadTopicMatches?.length, 1, "Should have exactly one Thread-Topic header");
+  });
+});

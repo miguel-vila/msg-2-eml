@@ -21,6 +21,8 @@ const EXCLUDED_TRANSPORT_HEADERS = new Set([
   "x-priority",
   "disposition-notification-to",
   "return-receipt-to",
+  "thread-index",
+  "thread-topic",
   "content-type",
   "content-transfer-encoding",
 ]);
@@ -149,6 +151,13 @@ export function convertToEml(parsed: ParsedMsg): string {
     }
     if (parsed.headers.returnReceiptTo) {
       eml += `${foldHeader("Return-Receipt-To", parsed.headers.returnReceiptTo)}\r\n`;
+    }
+    // Add conversation threading headers
+    if (parsed.headers.threadIndex) {
+      eml += `${foldHeader("Thread-Index", parsed.headers.threadIndex)}\r\n`;
+    }
+    if (parsed.headers.threadTopic) {
+      eml += `${foldHeader("Thread-Topic", encodeRfc2047(parsed.headers.threadTopic))}\r\n`;
     }
     // Add original transport headers (Received, DKIM-Signature, SPF, Authentication-Results, etc.)
     if (parsed.headers.transportMessageHeaders) {
