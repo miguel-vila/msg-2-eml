@@ -6,7 +6,11 @@ import {
   PidTagBody,
   PidTagBodyHtml,
   PidTagSenderEmailAddress,
+  PidTagSenderSmtpAddress,
   PidTagSenderName,
+  PidTagSentRepresentingEmailAddress,
+  PidTagSentRepresentingSmtpAddress,
+  PidTagSentRepresentingName,
   PidTagMessageDeliveryTime,
   PidTagDisplayName,
   PidTagEmailAddress,
@@ -120,19 +124,42 @@ function parseAttachment(attachment: MsgAttachment): Attachment | null {
   };
 }
 
+function extractSenderEmail(msg: Msg): string | undefined {
+  return (
+    msg.getProperty<string>(PidTagSenderEmailAddress) ||
+    msg.getProperty<string>(PidTagSenderSmtpAddress) ||
+    msg.getProperty<string>(PidTagSentRepresentingEmailAddress) ||
+    msg.getProperty<string>(PidTagSentRepresentingSmtpAddress) ||
+    undefined
+  );
+}
+
+function extractSenderName(msg: Msg): string | undefined {
+  return (
+    msg.getProperty<string>(PidTagSenderName) ||
+    msg.getProperty<string>(PidTagSentRepresentingName) ||
+    undefined
+  );
+}
+
+export function formatSender(email: string | undefined, name: string | undefined): string {
+  if (name && email && name !== email) {
+    return `"${name}" <${email}>`;
+  }
+  return email || name || "unknown@unknown.com";
+}
+
 export function parseMsg(buffer: ArrayBuffer): ParsedMsg {
   const msg = Msg.fromUint8Array(new Uint8Array(buffer));
 
   const subject = msg.getProperty<string>(PidTagSubject) || "(No Subject)";
   const body = msg.getProperty<string>(PidTagBody) || "";
   const bodyHtml = msg.getProperty<string>(PidTagBodyHtml);
-  const senderEmail = msg.getProperty<string>(PidTagSenderEmailAddress) || "";
-  const senderName = msg.getProperty<string>(PidTagSenderName) || senderEmail;
+  const senderEmail = extractSenderEmail(msg);
+  const senderName = extractSenderName(msg);
   const deliveryTime = msg.getProperty<Date>(PidTagMessageDeliveryTime);
 
-  const from = senderName && senderEmail && senderName !== senderEmail
-    ? `"${senderName}" <${senderEmail}>`
-    : senderEmail || senderName || "unknown@unknown.com";
+  const from = formatSender(senderEmail, senderName);
 
   const recipients = msg.recipients().map(parseRecipient);
   const attachments = msg.attachments()
