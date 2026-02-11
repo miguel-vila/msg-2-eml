@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { convertToEml, formatSender, mapToXPriority, foldHeader, extractBodyFromRtf } from "./msg-to-eml.js";
+import { convertToEml, formatSender, mapToXPriority, foldHeader, extractBodyFromRtf, parseMsg } from "./msg-to-eml.js";
 
 /**
  * Creates an uncompressed RTF format for PidTagRtfCompressed.
@@ -755,5 +755,149 @@ describe("extractBodyFromRtf", () => {
       assert.ok(!result!.text.includes("<p>"), "Plain text should not contain <p> tag");
       assert.ok(!result!.text.includes("</p>"), "Plain text should not contain </p> tag");
     }
+  });
+});
+
+describe("convertToEml with embedded messages (message/rfc822)", () => {
+  it("should use message/rfc822 content type for embedded messages", () => {
+    const embeddedEmlContent = `From: nested@example.com\r
+To: recipient@example.com\r
+Subject: Forwarded Email\r
+Date: Mon, 1 Jan 2024 12:00:00 +0000\r
+MIME-Version: 1.0\r
+Content-Type: text/plain; charset="utf-8"\r
+\r
+This is the forwarded message body.`;
+
+    const parsed = {
+      subject: "FW: Original Subject",
+      from: "sender@example.com",
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date("2024-01-15T10:30:00Z"),
+      body: "Please see the forwarded email below.",
+      attachments: [
+        {
+          fileName: "forwarded.eml",
+          content: new TextEncoder().encode(embeddedEmlContent),
+          contentType: "message/rfc822",
+          isEmbeddedMessage: true,
+        },
+      ],
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should have message/rfc822 content type
+    assert.ok(eml.includes("Content-Type: message/rfc822"), "Should use message/rfc822 content type");
+    // Should use 7bit encoding (not base64) for message/rfc822
+    assert.ok(eml.includes("Content-Transfer-Encoding: 7bit"), "Should use 7bit encoding for embedded messages");
+    // The embedded message content should be present
+    assert.ok(eml.includes("From: nested@example.com"), "Embedded message headers should be present");
+    assert.ok(eml.includes("Subject: Forwarded Email"), "Embedded message subject should be present");
+    assert.ok(eml.includes("This is the forwarded message body"), "Embedded message body should be present");
+  });
+
+  it("should preserve filename for embedded messages", () => {
+    const embeddedContent = "From: test@example.com\r\nSubject: Test\r\n\r\nBody";
+
+    const parsed = {
+      subject: "With embedded email",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "See attached",
+      attachments: [
+        {
+          fileName: "original-email.eml",
+          content: new TextEncoder().encode(embeddedContent),
+          contentType: "message/rfc822",
+        },
+      ],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes('name="original-email.eml"'), "Should preserve filename in Content-Type");
+    assert.ok(eml.includes('filename="original-email.eml"'), "Should preserve filename in Content-Disposition");
+  });
+
+  it("should handle mixed regular attachments and embedded messages", () => {
+    const embeddedContent = "From: test@example.com\r\nSubject: Test\r\n\r\nBody";
+
+    const parsed = {
+      subject: "Mixed attachments",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Multiple attachments",
+      attachments: [
+        {
+          fileName: "document.pdf",
+          content: new Uint8Array([37, 80, 68, 70]), // PDF magic bytes
+          contentType: "application/pdf",
+        },
+        {
+          fileName: "forwarded.eml",
+          content: new TextEncoder().encode(embeddedContent),
+          contentType: "message/rfc822",
+        },
+      ],
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Regular attachment should use base64
+    assert.ok(eml.includes("Content-Type: application/pdf"), "Should have PDF attachment");
+    // Embedded message should use 7bit
+    assert.ok(eml.includes("Content-Type: message/rfc822"), "Should have embedded message");
+    // Count encoding types
+    const base64Count = (eml.match(/Content-Transfer-Encoding: base64/g) || []).length;
+    const sevenBitCount = (eml.match(/Content-Transfer-Encoding: 7bit/g) || []).length;
+    assert.strictEqual(base64Count, 1, "Should have one base64 encoded attachment");
+    assert.strictEqual(sevenBitCount, 1, "Should have one 7bit encoded attachment");
+  });
+
+  it("should handle deeply nested embedded messages", () => {
+    // Inner embedded message
+    const innerEml = `From: inner@example.com\r
+Subject: Inner Message\r
+\r
+Inner body`;
+
+    // Outer embedded message containing the inner one
+    const outerEml = `From: outer@example.com\r
+Subject: Outer Message\r
+MIME-Version: 1.0\r
+Content-Type: multipart/mixed; boundary="nested"\r
+\r
+--nested\r
+Content-Type: text/plain\r
+\r
+Outer body\r
+--nested\r
+Content-Type: message/rfc822\r
+\r
+${innerEml}\r
+--nested--`;
+
+    const parsed = {
+      subject: "Forwarded chain",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "See forwarded chain",
+      attachments: [
+        {
+          fileName: "chain.eml",
+          content: new TextEncoder().encode(outerEml),
+          contentType: "message/rfc822",
+        },
+      ],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("From: outer@example.com"), "Should contain outer embedded message");
+    assert.ok(eml.includes("From: inner@example.com"), "Should contain inner embedded message");
   });
 });

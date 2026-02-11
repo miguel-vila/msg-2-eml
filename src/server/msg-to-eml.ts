@@ -1,5 +1,6 @@
 import {
   Msg,
+  EmbeddedMessage,
   Attachment as MsgAttachment,
   Recipient as MsgRecipient,
   PidTagSubject,
@@ -36,6 +37,7 @@ interface Attachment {
   content: Uint8Array;
   contentType: string;
   contentId?: string;
+  isEmbeddedMessage?: boolean;
 }
 
 interface ParsedRecipient {
@@ -311,6 +313,36 @@ function parseAttachment(attachment: MsgAttachment): Attachment | null {
   };
 }
 
+/**
+ * Parses an embedded MSG file (forwarded email, attachment) and converts it to an EML attachment.
+ * Uses msg.extractEmbeddedMessage() to get a full Msg object, then recursively converts to EML.
+ */
+function parseEmbeddedMessage(msg: Msg, embeddedMessage: EmbeddedMessage): Attachment {
+  // Get filename from the embedded message attachment properties
+  const fileName =
+    embeddedMessage.getProperty<string>(PidTagAttachLongFilename) ||
+    embeddedMessage.getProperty<string>(PidTagAttachFilename) ||
+    "embedded.eml";
+
+  // Ensure the filename has .eml extension
+  const emlFileName = fileName.toLowerCase().endsWith(".eml")
+    ? fileName
+    : fileName.replace(/\.msg$/i, ".eml") || fileName + ".eml";
+
+  // Extract the embedded message as a full Msg object
+  const extractedMsg = msg.extractEmbeddedMessage(embeddedMessage);
+
+  // Recursively convert to EML using the internal parse function
+  const emlContent = msgToEmlFromMsg(extractedMsg);
+
+  return {
+    fileName: emlFileName,
+    content: new TextEncoder().encode(emlContent),
+    contentType: "message/rfc822",
+    isEmbeddedMessage: true,
+  };
+}
+
 function extractSenderEmail(msg: Msg): string | undefined {
   return (
     msg.getProperty<string>(PidTagSenderEmailAddress) ||
@@ -494,9 +526,7 @@ function stripHtmlTags(html: string): string {
     .trim();
 }
 
-export function parseMsg(buffer: ArrayBuffer): ParsedMsg {
-  const msg = Msg.fromUint8Array(new Uint8Array(buffer));
-
+function parseMsgFromMsg(msg: Msg): ParsedMsg {
   const subject = msg.getProperty<string>(PidTagSubject) || "(No Subject)";
   let body = msg.getProperty<string>(PidTagBody) || "";
   let bodyHtml = msg.getProperty<string>(PidTagBodyHtml);
@@ -521,9 +551,20 @@ export function parseMsg(buffer: ArrayBuffer): ParsedMsg {
   const from = formatSender(senderEmail, senderName);
 
   const recipients = msg.recipients().map(parseRecipient);
-  const attachments = msg.attachments()
+
+  // Parse regular attachments
+  const regularAttachments = msg.attachments()
     .map(parseAttachment)
     .filter((a): a is Attachment => a !== null);
+
+  // Parse embedded messages (forwarded emails, attached emails)
+  const embeddedMessages = msg.embeddedMessages();
+  const embeddedAttachments = embeddedMessages.map((embedded) =>
+    parseEmbeddedMessage(msg, embedded)
+  );
+
+  // Combine regular attachments and embedded message attachments
+  const attachments = [...regularAttachments, ...embeddedAttachments];
 
   // Extract additional message headers
   const messageId = msg.getProperty<string>(PidTagInternetMessageId);
@@ -551,6 +592,11 @@ export function parseMsg(buffer: ArrayBuffer): ParsedMsg {
     attachments,
     headers: Object.keys(headers).length > 0 ? headers : undefined,
   };
+}
+
+export function parseMsg(buffer: ArrayBuffer): ParsedMsg {
+  const msg = Msg.fromUint8Array(new Uint8Array(buffer));
+  return parseMsgFromMsg(msg);
 }
 
 export function convertToEml(parsed: ParsedMsg): string {
@@ -656,11 +702,24 @@ export function convertToEml(parsed: ParsedMsg): string {
     } else {
       part += `Content-Disposition: attachment; filename="${att.fileName}"\r\n`;
     }
-    part += `Content-Transfer-Encoding: base64\r\n`;
-    part += `\r\n`;
-    const base64 = encodeBase64(att.content);
-    for (let i = 0; i < base64.length; i += 76) {
-      part += base64.slice(i, i + 76) + "\r\n";
+
+    // For message/rfc822 (embedded emails), use 7bit encoding since the content
+    // is already a valid EML file with its own encoding
+    if (att.contentType === "message/rfc822") {
+      part += `Content-Transfer-Encoding: 7bit\r\n`;
+      part += `\r\n`;
+      part += new TextDecoder().decode(att.content);
+      // Ensure proper line ending
+      if (!part.endsWith("\r\n")) {
+        part += "\r\n";
+      }
+    } else {
+      part += `Content-Transfer-Encoding: base64\r\n`;
+      part += `\r\n`;
+      const base64 = encodeBase64(att.content);
+      for (let i = 0; i < base64.length; i += 76) {
+        part += base64.slice(i, i + 76) + "\r\n";
+      }
     }
     return part;
   };
@@ -739,6 +798,15 @@ export function convertToEml(parsed: ParsedMsg): string {
   }
 
   return eml;
+}
+
+/**
+ * Converts a Msg object directly to EML format.
+ * Used internally for recursive conversion of embedded messages.
+ */
+function msgToEmlFromMsg(msg: Msg): string {
+  const parsed = parseMsgFromMsg(msg);
+  return convertToEml(parsed);
 }
 
 export function msgToEml(buffer: ArrayBuffer): string {
