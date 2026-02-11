@@ -10,7 +10,7 @@
     "start": "node dist/server/index.js",
     "dev": "npm run build && npm start",
     "test": "npm run build:server && npm run test:unit && npm run test:integration",
-    "test:unit": "node --test 'dist/server/msg-to-eml/**/__tests__/*.test.js'",
+    "test:unit": "node --test dist/server/msg-to-eml/*/__tests__/*.test.js",
     "test:integration": "node --test dist/server/msg-to-eml.integration.test.js",
     "lint": "biome check src/",
     "lint:fix": "biome check --write src/",
