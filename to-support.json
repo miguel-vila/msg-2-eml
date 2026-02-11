@@ -205,9 +205,11 @@
   {
     "id": "date-fallback-client-submit-time",
     "description": "When PidTagMessageDeliveryTime is missing, fall back to PidTagClientSubmitTime (0x0039) before defaulting to the current date. ClientSubmitTime records when the message was submitted by the client, which is a better approximation than the current timestamp. Also try parsing the Date: header from PidTagTransportMessageHeaders as another fallback. Affected samples: msgKitOut_attach.msg, strangeDate.msg, testOut_attach.msg, testOut_noattach.msg.",
-    "implemented": false,
+    "implemented": true,
     "priority": 21,
-    "testFiles": []
+    "testFiles": [
+      "src/server/msg-to-eml/parsing/__tests__/date-fallback.test.ts"
+    ]
   },
   {
     "id": "recipient-email-from-transport-headers",

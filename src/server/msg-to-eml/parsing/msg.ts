@@ -10,6 +10,7 @@ import {
   PidTagAutoForwarded,
   PidTagBody,
   PidTagBodyHtml,
+  PidTagClientSubmitTime,
   PidTagConversationIndex,
   PidTagConversationTopic,
   PidTagImportance,
@@ -61,6 +62,44 @@ export function mapSensitivity(
   }
 }
 
+/**
+ * Parses the Date: header from raw transport message headers string.
+ * Returns the parsed Date, or undefined if not found or invalid.
+ */
+export function parseDateFromTransportHeaders(transportHeaders: string): Date | undefined {
+  const normalized = transportHeaders.replace(/\r?\n/g, "\n");
+  const lines = normalized.split("\n");
+
+  let dateValue = "";
+  let foundDate = false;
+
+  for (const line of lines) {
+    if (!foundDate) {
+      const match = line.match(/^date:\s*(.*)/i);
+      if (match) {
+        dateValue = match[1];
+        foundDate = true;
+      }
+    } else if (line.startsWith(" ") || line.startsWith("\t")) {
+      // Continuation line (folded header)
+      dateValue += ` ${line.trim()}`;
+    } else {
+      break;
+    }
+  }
+
+  if (!foundDate || !dateValue.trim()) {
+    return undefined;
+  }
+
+  const parsed = new Date(dateValue.trim());
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+
+  return parsed;
+}
+
 export function parseMsgFromMsg(msg: Msg, msgToEmlFromMsg: (msg: Msg) => string): ParsedMsg {
   const subject = msg.getProperty<string>(PidTagSubject) || "(No Subject)";
   let body = msg.getProperty<string>(PidTagBody) || "";
@@ -70,6 +109,7 @@ export function parseMsgFromMsg(msg: Msg, msgToEmlFromMsg: (msg: Msg) => string)
   const senderEmail = senderInfo.from.email;
   const senderName = senderInfo.from.name;
   const deliveryTime = msg.getProperty<Date>(PidTagMessageDeliveryTime);
+  const clientSubmitTime = msg.getProperty<Date>(PidTagClientSubmitTime);
 
   // If body is empty, try to extract from compressed RTF
   if (!body && !bodyHtml) {
@@ -246,7 +286,11 @@ export function parseMsgFromMsg(msg: Msg, msgToEmlFromMsg: (msg: Msg) => string)
     from,
     sender: senderHeader,
     recipients,
-    date: deliveryTime || new Date(),
+    date:
+      deliveryTime ||
+      clientSubmitTime ||
+      (transportMessageHeaders ? parseDateFromTransportHeaders(transportMessageHeaders) : undefined) ||
+      new Date(),
     body,
     bodyHtml: bodyHtml || undefined,
     attachments,
