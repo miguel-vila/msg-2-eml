@@ -77,14 +77,24 @@ import {
   PidLidAppointmentEndWhole,
   PidLidAppointmentStartWhole,
   PidLidCcAttendeesString,
+  PidLidCategories,
   PidLidLocation,
   PidLidToAttendeesString,
+  PidTagAutoForwarded,
+  PidTagAutoForwardComment,
   PidTagBody,
   PidTagBodyHtml,
+  PidTagClientSubmitTime,
+  PidTagConversationIndex,
+  PidTagConversationTopic,
+  PidTagDisplayBcc,
   PidTagImportance,
   PidTagInReplyToId,
   PidTagInternetMessageId,
   PidTagInternetReferences,
+  PidTagListHelp,
+  PidTagListSubscribe,
+  PidTagListUnsubscribe,
   PidTagMessageClass,
   PidTagMessageDeliveryTime,
   PidTagOriginatorDeliveryReportRequested,
@@ -95,7 +105,12 @@ import {
   PidTagSenderEmailAddress,
   PidTagSenderName,
   PidTagSenderSmtpAddress,
+  PidTagSensitivity,
+  PidTagSentRepresentingEmailAddress,
+  PidTagSentRepresentingName,
+  PidTagSentRepresentingSmtpAddress,
   PidTagSubject,
+  PidTagTransportMessageHeaders,
 } from "msg-parser";
 import { msgToEml, parseMsg } from "../src/server/msg-to-eml.js";
 import type { ParsedMsg, ParsedRecipient, Attachment } from "../src/server/msg-to-eml/types/index.js";
@@ -195,6 +210,26 @@ interface RawMsgData {
   location: string | undefined;
   toAttendees: string | undefined;
   ccAttendees: string | undefined;
+  // Additional metadata fields
+  displayBcc: string | undefined;
+  sensitivity: number | undefined;
+  categories: string[] | undefined;
+  autoForwarded: boolean | undefined;
+  autoForwardComment: string | undefined;
+  clientSubmitTime: Date | undefined;
+  // On-behalf-of (Sent Representing)
+  sentRepresentingName: string | undefined;
+  sentRepresentingEmail: string | undefined;
+  sentRepresentingSmtp: string | undefined;
+  // Threading
+  conversationIndex: number[] | undefined;
+  conversationTopic: string | undefined;
+  // Mailing list
+  listHelp: string | undefined;
+  listSubscribe: string | undefined;
+  listUnsubscribe: string | undefined;
+  // Transport headers
+  hasTransportHeaders: boolean;
 }
 
 function safeGetProperty<T>(msg: Msg, prop: unknown): T | undefined {
@@ -228,6 +263,8 @@ function extractRawMsgData(msg: Msg): RawMsgData {
     // ignore
   }
 
+  const transportHeaders = safeGetProperty<string>(msg, PidTagTransportMessageHeaders);
+
   return {
     subject: safeGetProperty<string>(msg, PidTagSubject),
     senderName: safeGetProperty<string>(msg, PidTagSenderName),
@@ -255,6 +292,26 @@ function extractRawMsgData(msg: Msg): RawMsgData {
     location: safeGetProperty<string>(msg, PidLidLocation),
     toAttendees: safeGetProperty<string>(msg, PidLidToAttendeesString),
     ccAttendees: safeGetProperty<string>(msg, PidLidCcAttendeesString),
+    // Additional metadata fields
+    displayBcc: safeGetProperty<string>(msg, PidTagDisplayBcc),
+    sensitivity: safeGetProperty<number>(msg, PidTagSensitivity),
+    categories: safeGetProperty<string[]>(msg, PidLidCategories),
+    autoForwarded: safeGetProperty<boolean>(msg, PidTagAutoForwarded),
+    autoForwardComment: safeGetProperty<string>(msg, PidTagAutoForwardComment),
+    clientSubmitTime: safeGetProperty<Date>(msg, PidTagClientSubmitTime),
+    // On-behalf-of (Sent Representing)
+    sentRepresentingName: safeGetProperty<string>(msg, PidTagSentRepresentingName),
+    sentRepresentingEmail: safeGetProperty<string>(msg, PidTagSentRepresentingEmailAddress),
+    sentRepresentingSmtp: safeGetProperty<string>(msg, PidTagSentRepresentingSmtpAddress),
+    // Threading
+    conversationIndex: safeGetProperty<number[]>(msg, PidTagConversationIndex),
+    conversationTopic: safeGetProperty<string>(msg, PidTagConversationTopic),
+    // Mailing list
+    listHelp: safeGetProperty<string>(msg, PidTagListHelp),
+    listSubscribe: safeGetProperty<string>(msg, PidTagListSubscribe),
+    listUnsubscribe: safeGetProperty<string>(msg, PidTagListUnsubscribe),
+    // Transport headers
+    hasTransportHeaders: !!(transportHeaders && transportHeaders.length > 0),
   };
 }
 
@@ -480,6 +537,142 @@ function analyzeGaps(rawData: RawMsgData, parsed: ParsedMsg, emlContent: string)
     }
   }
 
+  // Check for BCC recipients (hidden recipients that might be lost)
+  if (rawData.displayBcc && rawData.displayBcc.trim().length > 0) {
+    const bccRecipients = parsed.recipients.filter((r) => r.type === "bcc");
+    if (bccRecipients.length === 0) {
+      gaps.push({
+        field: "bcc",
+        severity: "warning",
+        message: "BCC recipients found in MSG but not extracted",
+        inputValue: rawData.displayBcc,
+      });
+    }
+  }
+
+  // Check sensitivity level
+  if (rawData.sensitivity !== undefined && rawData.sensitivity > 0) {
+    const sensitivityLabels = ["Normal", "Personal", "Private", "Confidential"];
+    const hasSensitivityHeader = emlContent.includes("Sensitivity:");
+    if (!hasSensitivityHeader) {
+      gaps.push({
+        field: "sensitivity",
+        severity: "info",
+        message: `Email has sensitivity level: ${sensitivityLabels[rawData.sensitivity] || rawData.sensitivity}`,
+        inputValue: rawData.sensitivity,
+      });
+    }
+  }
+
+  // Check for categories/tags
+  if (rawData.categories && rawData.categories.length > 0) {
+    const hasKeywordsHeader = emlContent.includes("Keywords:");
+    if (!hasKeywordsHeader) {
+      gaps.push({
+        field: "categories",
+        severity: "info",
+        message: "Email has categories that are not in EML output",
+        inputValue: rawData.categories,
+      });
+    }
+  }
+
+  // Check for auto-forwarded message
+  if (rawData.autoForwarded) {
+    const hasAutoForwardedHeader = emlContent.includes("Auto-Submitted:");
+    if (!hasAutoForwardedHeader) {
+      gaps.push({
+        field: "autoForwarded",
+        severity: "info",
+        message: "Email was auto-forwarded",
+        inputValue: rawData.autoForwardComment || true,
+      });
+    }
+  }
+
+  // Check for on-behalf-of scenario
+  const senderSmtp = rawData.senderSmtp || rawData.senderEmail;
+  const sentRepSmtp = rawData.sentRepresentingSmtp || rawData.sentRepresentingEmail;
+  const isOnBehalfOf = senderSmtp && sentRepSmtp && senderSmtp !== sentRepSmtp;
+  if (isOnBehalfOf) {
+    const hasSenderHeader = emlContent.includes("\nSender:");
+    if (!hasSenderHeader) {
+      gaps.push({
+        field: "onBehalfOf",
+        severity: "warning",
+        message: "Message sent on behalf of another user but Sender header missing",
+        inputValue: {
+          sender: { name: rawData.senderName, email: senderSmtp },
+          from: { name: rawData.sentRepresentingName, email: sentRepSmtp },
+        },
+      });
+    } else {
+      gaps.push({
+        field: "onBehalfOf",
+        severity: "info",
+        message: "Message sent on behalf of another user (Sender header present)",
+        inputValue: {
+          sender: { name: rawData.senderName, email: senderSmtp },
+          from: { name: rawData.sentRepresentingName, email: sentRepSmtp },
+        },
+      });
+    }
+  }
+
+  // Check for threading information
+  if (rawData.conversationIndex && rawData.conversationIndex.length > 0) {
+    const hasThreadIndex = emlContent.includes("Thread-Index:");
+    if (!hasThreadIndex) {
+      gaps.push({
+        field: "threading",
+        severity: "warning",
+        message: "Conversation index present but Thread-Index header missing",
+      });
+    }
+  }
+
+  if (rawData.conversationTopic) {
+    const hasThreadTopic = emlContent.includes("Thread-Topic:");
+    if (!hasThreadTopic) {
+      gaps.push({
+        field: "threading",
+        severity: "warning",
+        message: "Conversation topic present but Thread-Topic header missing",
+        inputValue: rawData.conversationTopic,
+      });
+    }
+  }
+
+  // Check for mailing list headers
+  if (rawData.listUnsubscribe || rawData.listSubscribe || rawData.listHelp) {
+    const hasListHeaders =
+      emlContent.includes("List-Unsubscribe:") || emlContent.includes("List-Subscribe:") || emlContent.includes("List-Help:");
+    if (!hasListHeaders) {
+      gaps.push({
+        field: "mailingList",
+        severity: "info",
+        message: "Mailing list headers present in MSG but not in EML",
+        inputValue: {
+          listHelp: rawData.listHelp,
+          listSubscribe: rawData.listSubscribe,
+          listUnsubscribe: rawData.listUnsubscribe,
+        },
+      });
+    }
+  }
+
+  // Check for original transport headers
+  if (rawData.hasTransportHeaders) {
+    const receivedHeaders = (emlContent.match(/^Received:/gm) || []).length;
+    if (receivedHeaders === 0) {
+      gaps.push({
+        field: "transportHeaders",
+        severity: "warning",
+        message: "Original transport headers exist but not included in EML",
+      });
+    }
+  }
+
   // EML output validation
   if (!emlContent.includes("From:")) {
     gaps.push({
@@ -644,6 +837,20 @@ async function main(): Promise<void> {
         attachmentCount: rawData.attachmentCount,
         embeddedMessageCount: rawData.embeddedMessageCount,
         messageId: rawData.messageId,
+        // New fields
+        sensitivity: rawData.sensitivity,
+        categories: rawData.categories,
+        displayBcc: rawData.displayBcc,
+        autoForwarded: rawData.autoForwarded,
+        conversationTopic: rawData.conversationTopic,
+        hasConversationIndex: !!(rawData.conversationIndex && rawData.conversationIndex.length > 0),
+        hasTransportHeaders: rawData.hasTransportHeaders,
+        sentRepresenting: rawData.sentRepresentingSmtp || rawData.sentRepresentingEmail
+          ? { name: rawData.sentRepresentingName, email: rawData.sentRepresentingSmtp || rawData.sentRepresentingEmail }
+          : undefined,
+        mailingList: rawData.listUnsubscribe || rawData.listSubscribe || rawData.listHelp
+          ? { help: rawData.listHelp, subscribe: rawData.listSubscribe, unsubscribe: rawData.listUnsubscribe }
+          : undefined,
       },
       output: {
         subject: parsed.subject,
@@ -749,6 +956,29 @@ async function main(): Promise<void> {
   printField("Importance", rawData.importance);
   printField("Read Receipt", rawData.readReceiptRequested);
   printField("Delivery Receipt", rawData.deliveryReceiptRequested);
+
+  printSection("Additional Metadata");
+  printField("Sensitivity", rawData.sensitivity !== undefined ? ["Normal", "Personal", "Private", "Confidential"][rawData.sensitivity] : undefined);
+  printField("Categories", rawData.categories?.join(", ") || undefined);
+  printField("Auto-Forwarded", rawData.autoForwarded);
+  printField("Auto-Forward Comment", rawData.autoForwardComment);
+  printField("Client Submit Time", rawData.clientSubmitTime);
+  printField("Display BCC", rawData.displayBcc);
+  printField("Has Transport Headers", rawData.hasTransportHeaders);
+
+  printSection("Threading");
+  printField("Conversation Topic", rawData.conversationTopic);
+  printField("Conversation Index", rawData.conversationIndex ? `[${rawData.conversationIndex.length} bytes]` : undefined);
+
+  printSection("On-Behalf-Of (Sent Representing)");
+  printField("Name", rawData.sentRepresentingName);
+  printField("Email", rawData.sentRepresentingEmail);
+  printField("SMTP", rawData.sentRepresentingSmtp);
+
+  printSection("Mailing List");
+  printField("List-Help", rawData.listHelp);
+  printField("List-Subscribe", rawData.listSubscribe);
+  printField("List-Unsubscribe", rawData.listUnsubscribe);
 
   if (rawData.messageClass?.startsWith("IPM.Appointment")) {
     printSection("Calendar Properties");

@@ -156,5 +156,33 @@
     "testFiles": [
       "src/server/msg-to-eml/converter/__tests__/eml.test.ts:convertToEml with received-by headers"
     ]
+  },
+  {
+    "id": "sensitivity-header",
+    "description": "Map PidTagSensitivity (0x0036) to the Sensitivity MIME header. Values: 0=Normal (omit header), 1='Personal', 2='Private', 3='Company-Confidential'. This preserves email confidentiality classification from Outlook/Exchange.",
+    "implemented": false,
+    "priority": 16,
+    "testFiles": []
+  },
+  {
+    "id": "mailing-list-headers",
+    "description": "Extract mailing list metadata and add List-* headers. Map PidTagListHelp to List-Help, PidTagListSubscribe to List-Subscribe, and PidTagListUnsubscribe to List-Unsubscribe. These headers help email clients display unsubscribe options and identify mailing list messages.",
+    "implemented": false,
+    "priority": 17,
+    "testFiles": []
+  },
+  {
+    "id": "categories-keywords",
+    "description": "Map PidLidCategories to the Keywords MIME header (RFC 5322). Outlook categories are stored as a string array - join with commas for the Keywords header value. This preserves email organization/tagging from Outlook.",
+    "implemented": false,
+    "priority": 18,
+    "testFiles": []
+  },
+  {
+    "id": "auto-submitted-header",
+    "description": "Add Auto-Submitted header for auto-forwarded messages. Check PidTagAutoForwarded (0x0005) - if true, add 'Auto-Submitted: auto-forwarded' header per RFC 3834. Optionally include PidTagAutoForwardComment in the header or as X-Auto-Forward-Comment.",
+    "implemented": false,
+    "priority": 19,
+    "testFiles": []
   }
 ]
