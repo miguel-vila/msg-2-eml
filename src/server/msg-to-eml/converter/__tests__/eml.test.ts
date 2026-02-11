@@ -2063,3 +2063,259 @@ From: sender@example.com`;
     assert.ok(eml.includes("Delivered-To: final-recipient@example.com"), "Should have Delivered-To");
   });
 });
+
+describe("convertToEml with mailing list headers", () => {
+  it("should include List-Help header when present", () => {
+    const parsed = {
+      subject: "Mailing List Message",
+      from: "list@example.com",
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        listHelp: "<mailto:list-help@example.com>",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("List-Help: <mailto:list-help@example.com>"), "Should have List-Help header");
+  });
+
+  it("should include List-Subscribe header when present", () => {
+    const parsed = {
+      subject: "Mailing List Message",
+      from: "list@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        listSubscribe: "<https://example.com/subscribe>",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("List-Subscribe: <https://example.com/subscribe>"), "Should have List-Subscribe header");
+  });
+
+  it("should include List-Unsubscribe header when present", () => {
+    const parsed = {
+      subject: "Mailing List Message",
+      from: "list@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        listUnsubscribe: "<mailto:unsubscribe@example.com>, <https://example.com/unsubscribe>",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Check for List-Unsubscribe header (may be folded)
+    assert.ok(eml.includes("List-Unsubscribe:"), "Should have List-Unsubscribe header");
+    // Normalize folded headers to check content
+    const normalizedEml = eml.replace(/\r\n[\t ]/g, " ");
+    assert.ok(
+      normalizedEml.includes("<mailto:unsubscribe@example.com>, <https://example.com/unsubscribe>"),
+      "Should include unsubscribe URLs",
+    );
+  });
+
+  it("should include all mailing list headers when present", () => {
+    const parsed = {
+      subject: "Newsletter",
+      from: "newsletter@example.com",
+      recipients: [{ name: "", email: "subscriber@example.com", type: "to" as const }],
+      date: new Date(),
+      body: "Newsletter content",
+      attachments: [],
+      headers: {
+        listHelp: "<mailto:help@example.com>",
+        listSubscribe: "<https://example.com/subscribe>",
+        listUnsubscribe: "<https://example.com/unsubscribe>",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("List-Help: <mailto:help@example.com>"), "Should have List-Help header");
+    assert.ok(eml.includes("List-Subscribe: <https://example.com/subscribe>"), "Should have List-Subscribe header");
+    assert.ok(
+      eml.includes("List-Unsubscribe: <https://example.com/unsubscribe>"),
+      "Should have List-Unsubscribe header",
+    );
+  });
+
+  it("should not include mailing list headers when not present", () => {
+    const parsed = {
+      subject: "Regular Email",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(!eml.includes("List-Help:"), "Should not have List-Help header when not present");
+    assert.ok(!eml.includes("List-Subscribe:"), "Should not have List-Subscribe header when not present");
+    assert.ok(!eml.includes("List-Unsubscribe:"), "Should not have List-Unsubscribe header when not present");
+  });
+
+  it("should place mailing list headers before Content-Type", () => {
+    const parsed = {
+      subject: "Test",
+      from: "list@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        listHelp: "<mailto:help@example.com>",
+        listSubscribe: "<https://example.com/subscribe>",
+        listUnsubscribe: "<https://example.com/unsubscribe>",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    const listHelpIndex = eml.indexOf("List-Help:");
+    const listSubscribeIndex = eml.indexOf("List-Subscribe:");
+    const listUnsubscribeIndex = eml.indexOf("List-Unsubscribe:");
+    const contentTypeIndex = eml.indexOf("Content-Type:");
+
+    assert.ok(listHelpIndex > 0, "Should have List-Help header");
+    assert.ok(listSubscribeIndex > 0, "Should have List-Subscribe header");
+    assert.ok(listUnsubscribeIndex > 0, "Should have List-Unsubscribe header");
+    assert.ok(listHelpIndex < contentTypeIndex, "List-Help should come before Content-Type");
+    assert.ok(listSubscribeIndex < contentTypeIndex, "List-Subscribe should come before Content-Type");
+    assert.ok(listUnsubscribeIndex < contentTypeIndex, "List-Unsubscribe should come before Content-Type");
+  });
+
+  it("should place mailing list headers after threading headers", () => {
+    const parsed = {
+      subject: "Re: Mailing List Thread",
+      from: "list@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        threadTopic: "Mailing List Thread",
+        listUnsubscribe: "<https://example.com/unsubscribe>",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    const threadTopicIndex = eml.indexOf("Thread-Topic:");
+    const listUnsubscribeIndex = eml.indexOf("List-Unsubscribe:");
+
+    assert.ok(threadTopicIndex > 0, "Should have Thread-Topic header");
+    assert.ok(listUnsubscribeIndex > 0, "Should have List-Unsubscribe header");
+    assert.ok(threadTopicIndex < listUnsubscribeIndex, "Thread-Topic should come before List-Unsubscribe");
+  });
+
+  it("should fold long List-Unsubscribe headers", () => {
+    const longUnsubscribe =
+      "<mailto:very-long-unsubscribe-address@example.com?subject=unsubscribe>, <https://example.com/unsubscribe?token=very-long-token-that-exceeds-line-length>";
+
+    const parsed = {
+      subject: "Newsletter",
+      from: "newsletter@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Newsletter content",
+      attachments: [],
+      headers: {
+        listUnsubscribe: longUnsubscribe,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should have List-Unsubscribe header
+    assert.ok(eml.includes("List-Unsubscribe:"), "Should have List-Unsubscribe header");
+
+    // The full value should be present (possibly folded)
+    // Normalize by replacing CRLF+whitespace with single space (how folded headers are joined)
+    const normalizedEml = eml.replace(/\r\n[\t ]/g, " ");
+    assert.ok(normalizedEml.includes(longUnsubscribe), "Full List-Unsubscribe value should be present");
+  });
+
+  it("should exclude mailing list headers from transport headers when we generate them", () => {
+    const transportHeaders = `Received: from mail.example.com by mx.example.org\r
+List-Help: <mailto:old-help@example.com>\r
+List-Subscribe: <https://old.example.com/subscribe>\r
+List-Unsubscribe: <https://old.example.com/unsubscribe>\r
+From: list@example.com`;
+
+    const parsed = {
+      subject: "Newsletter",
+      from: "list@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Newsletter content",
+      attachments: [],
+      headers: {
+        listHelp: "<mailto:new-help@example.com>",
+        listSubscribe: "<https://new.example.com/subscribe>",
+        listUnsubscribe: "<https://new.example.com/unsubscribe>",
+        transportMessageHeaders: transportHeaders,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should use our generated headers, not the ones from transport
+    assert.ok(eml.includes("List-Help: <mailto:new-help@example.com>"), "Should use generated List-Help");
+    assert.ok(
+      eml.includes("List-Subscribe: <https://new.example.com/subscribe>"),
+      "Should use generated List-Subscribe",
+    );
+    assert.ok(
+      eml.includes("List-Unsubscribe: <https://new.example.com/unsubscribe>"),
+      "Should use generated List-Unsubscribe",
+    );
+
+    // Count occurrences - should have exactly one of each
+    const listHelpMatches = eml.match(/List-Help:/g);
+    const listSubscribeMatches = eml.match(/List-Subscribe:/g);
+    const listUnsubscribeMatches = eml.match(/List-Unsubscribe:/g);
+    assert.strictEqual(listHelpMatches?.length, 1, "Should have exactly one List-Help header");
+    assert.strictEqual(listSubscribeMatches?.length, 1, "Should have exactly one List-Subscribe header");
+    assert.strictEqual(listUnsubscribeMatches?.length, 1, "Should have exactly one List-Unsubscribe header");
+  });
+
+  it("should work with other message headers", () => {
+    const parsed = {
+      subject: "Newsletter",
+      from: "newsletter@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Newsletter content",
+      attachments: [],
+      headers: {
+        messageId: "<newsletter123@example.com>",
+        priority: 3,
+        threadTopic: "Newsletter Topic",
+        listHelp: "<mailto:help@example.com>",
+        listUnsubscribe: "<https://example.com/unsubscribe>",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Message-ID: <newsletter123@example.com>"), "Should have Message-ID");
+    assert.ok(eml.includes("X-Priority: 3"), "Should have X-Priority");
+    assert.ok(eml.includes("Thread-Topic: Newsletter Topic"), "Should have Thread-Topic");
+    assert.ok(eml.includes("List-Help: <mailto:help@example.com>"), "Should have List-Help");
+    assert.ok(eml.includes("List-Unsubscribe: <https://example.com/unsubscribe>"), "Should have List-Unsubscribe");
+  });
+});

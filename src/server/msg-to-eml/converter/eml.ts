@@ -26,6 +26,9 @@ const EXCLUDED_TRANSPORT_HEADERS = new Set([
   "thread-index",
   "thread-topic",
   "delivered-to",
+  "list-help",
+  "list-subscribe",
+  "list-unsubscribe",
   "content-type",
   "content-transfer-encoding",
 ]);
@@ -168,6 +171,16 @@ export function convertToEml(parsed: ParsedMsg): string {
     }
     if (parsed.headers.threadTopic) {
       eml += `${foldHeader("Thread-Topic", encodeRfc2047(parsed.headers.threadTopic))}\r\n`;
+    }
+    // Add mailing list headers (RFC 2369)
+    if (parsed.headers.listHelp) {
+      eml += `${foldHeader("List-Help", parsed.headers.listHelp)}\r\n`;
+    }
+    if (parsed.headers.listSubscribe) {
+      eml += `${foldHeader("List-Subscribe", parsed.headers.listSubscribe)}\r\n`;
+    }
+    if (parsed.headers.listUnsubscribe) {
+      eml += `${foldHeader("List-Unsubscribe", parsed.headers.listUnsubscribe)}\r\n`;
     }
     // Add original transport headers (Received, DKIM-Signature, SPF, Authentication-Results, etc.)
     if (parsed.headers.transportMessageHeaders) {

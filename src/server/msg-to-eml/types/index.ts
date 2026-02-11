@@ -26,6 +26,10 @@ export interface MessageHeaders {
   threadTopic?: string; // Conversation topic/subject for threading (Thread-Topic header)
   receivedByEmail?: string; // SMTP address of the final recipient (from PidTagReceivedBySmtpAddress)
   receivedByName?: string; // Display name of the final recipient (from PidTagReceivedByName)
+  // Mailing list headers (RFC 2369)
+  listHelp?: string; // List-Help header URL (from PidTagListHelp)
+  listSubscribe?: string; // List-Subscribe header URL (from PidTagListSubscribe)
+  listUnsubscribe?: string; // List-Unsubscribe header URL (from PidTagListUnsubscribe)
 }
 
 export interface CalendarEvent {

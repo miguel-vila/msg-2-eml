@@ -13,6 +13,9 @@ import {
   PidTagInReplyToId,
   PidTagInternetMessageId,
   PidTagInternetReferences,
+  PidTagListHelp,
+  PidTagListSubscribe,
+  PidTagListUnsubscribe,
   PidTagMessageClass,
   PidTagMessageDeliveryTime,
   PidTagOriginatorDeliveryReportRequested,
@@ -160,6 +163,22 @@ export function parseMsgFromMsg(msg: Msg, msgToEmlFromMsg: (msg: Msg) => string)
   const receivedByName = msg.getProperty<string>(PidTagReceivedByName);
   if (receivedByName) {
     headers.receivedByName = receivedByName;
+  }
+
+  // Extract mailing list headers (RFC 2369)
+  const listHelp = msg.getProperty<string>(PidTagListHelp);
+  if (listHelp) {
+    headers.listHelp = listHelp;
+  }
+
+  const listSubscribe = msg.getProperty<string>(PidTagListSubscribe);
+  if (listSubscribe) {
+    headers.listSubscribe = listSubscribe;
+  }
+
+  const listUnsubscribe = msg.getProperty<string>(PidTagListUnsubscribe);
+  if (listUnsubscribe) {
+    headers.listUnsubscribe = listUnsubscribe;
   }
 
   // Check if this is a calendar appointment
