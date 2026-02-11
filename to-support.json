@@ -141,9 +141,12 @@
   {
     "id": "sender-on-behalf",
     "description": "Support 'on behalf of' scenarios where PidTagSentRepresenting* differs from PidTagSender*. When the sender is acting on behalf of another user, include both in the From header or add a Sender header. This preserves delegation information common in corporate Exchange environments.",
-    "implemented": false,
+    "implemented": true,
     "priority": 14,
-    "testFiles": []
+    "testFiles": [
+      "src/server/msg-to-eml/parsing/__tests__/sender.test.ts:extractSenderInfo",
+      "src/server/msg-to-eml/converter/__tests__/eml.test.ts:convertToEml with sender on behalf of"
+    ]
   },
   {
     "id": "received-headers",

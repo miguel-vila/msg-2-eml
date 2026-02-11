@@ -37,11 +37,14 @@ export {
 // Parsing utilities
 export {
   extractSenderEmail,
+  extractSenderInfo,
   extractSenderName,
   formatSender,
   parseAttachment,
   parseEmbeddedMessage,
   parseRecipient,
+  type SenderInfo,
+  type SenderResult,
 } from "./parsing/index.js";
 export type { RtfBodyResult } from "./rtf/index.js";
 // RTF utilities

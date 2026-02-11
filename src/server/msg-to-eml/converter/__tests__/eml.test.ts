@@ -1383,6 +1383,158 @@ DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=example.com;\r
   });
 });
 
+describe("convertToEml with sender on behalf of", () => {
+  it("should include Sender header when sender differs from From", () => {
+    const parsed = {
+      subject: "Test",
+      from: '"Boss" <boss@example.com>',
+      sender: '"Assistant" <assistant@example.com>',
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes('From: "Boss" <boss@example.com>'), "Should have From header with boss");
+    assert.ok(eml.includes('Sender: "Assistant" <assistant@example.com>'), "Should have Sender header with assistant");
+  });
+
+  it("should not include Sender header when not provided", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("From: sender@example.com"), "Should have From header");
+    assert.ok(!eml.includes("Sender:"), "Should not have Sender header");
+  });
+
+  it("should place Sender header immediately after From header", () => {
+    const parsed = {
+      subject: "Test",
+      from: '"Boss" <boss@example.com>',
+      sender: '"Assistant" <assistant@example.com>',
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    const fromIndex = eml.indexOf("From:");
+    const senderIndex = eml.indexOf("Sender:");
+    const toIndex = eml.indexOf("To:");
+
+    assert.ok(fromIndex > -1, "Should have From header");
+    assert.ok(senderIndex > -1, "Should have Sender header");
+    assert.ok(fromIndex < senderIndex, "From should come before Sender");
+    assert.ok(senderIndex < toIndex, "Sender should come before To");
+  });
+
+  it("should fold long Sender headers", () => {
+    const longName = "Very Long Assistant Name That Definitely Exceeds The Recommended Line Length For Email Headers";
+    const parsed = {
+      subject: "Test",
+      from: '"Boss" <boss@example.com>',
+      sender: `"${longName}" <assistant@example.com>`,
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Sender:"), "Should have Sender header");
+    // The email part should be present in the output (possibly after folding)
+    assert.ok(eml.includes("<assistant@example.com>"), "Should include email address");
+  });
+
+  it("should handle encoded Sender display names", () => {
+    const parsed = {
+      subject: "Test",
+      from: "=?UTF-8?B?5LiK5Y+4?= <boss@example.com>", // Japanese "上司" (boss)
+      sender: "=?UTF-8?B?56eY5pu4?= <secretary@example.com>", // Japanese "秘書" (secretary)
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("From: =?UTF-8?B?"), "Should have encoded From header");
+    assert.ok(eml.includes("Sender: =?UTF-8?B?"), "Should have encoded Sender header");
+    assert.ok(eml.includes("<secretary@example.com>"), "Should include secretary email");
+  });
+
+  it("should exclude Sender from transport headers when we generate it", () => {
+    const transportHeaders = `Received: from mail.example.com by mx.example.org\r
+Sender: old-assistant@example.com\r
+From: boss@example.com`;
+
+    const parsed = {
+      subject: "Test",
+      from: '"Boss" <boss@example.com>',
+      sender: '"New Assistant" <new-assistant@example.com>',
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        transportMessageHeaders: transportHeaders,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should use our generated Sender, not the one from transport
+    assert.ok(eml.includes('Sender: "New Assistant" <new-assistant@example.com>'), "Should use generated Sender");
+
+    // Count Sender occurrences - should have exactly one
+    const senderMatches = eml.match(/Sender:/g);
+    assert.strictEqual(senderMatches?.length, 1, "Should have exactly one Sender header");
+  });
+
+  it("should work with all other headers", () => {
+    const parsed = {
+      subject: "Important Message",
+      from: '"CEO" <ceo@example.com>',
+      sender: '"Executive Assistant" <ea@example.com>',
+      recipients: [
+        { name: "Recipient", email: "recipient@example.com", type: "to" as const },
+        { name: "CC Person", email: "cc@example.com", type: "cc" as const },
+      ],
+      date: new Date("2024-01-15T10:30:00Z"),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        messageId: "<test@example.com>",
+        priority: 1,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes('From: "CEO" <ceo@example.com>'), "Should have From header");
+    assert.ok(eml.includes('Sender: "Executive Assistant" <ea@example.com>'), "Should have Sender header");
+    assert.ok(eml.includes("To:"), "Should have To header");
+    assert.ok(eml.includes("Cc:"), "Should have Cc header");
+    assert.ok(eml.includes("Subject: Important Message"), "Should have Subject header");
+    assert.ok(eml.includes("Message-ID: <test@example.com>"), "Should have Message-ID header");
+    assert.ok(eml.includes("X-Priority: 1"), "Should have X-Priority header");
+  });
+});
+
 describe("convertToEml with conversation threading headers", () => {
   it("should include Thread-Index header when present", () => {
     // Example Thread-Index: a base64-encoded binary blob

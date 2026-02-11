@@ -36,6 +36,8 @@ export interface CalendarEvent {
 export interface ParsedMsg {
   subject: string;
   from: string;
+  /** RFC 5322 Sender header - only present when actual sender differs from From (on behalf of scenarios) */
+  sender?: string;
   recipients: ParsedRecipient[];
   date: Date;
   body: string;

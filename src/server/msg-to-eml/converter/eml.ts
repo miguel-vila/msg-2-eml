@@ -8,6 +8,7 @@ import { generateAlternativePart, generateAttachmentPart, generateTextPart } fro
 // Headers that we already generate and should be excluded from transport headers
 const EXCLUDED_TRANSPORT_HEADERS = new Set([
   "from",
+  "sender",
   "to",
   "cc",
   "bcc",
@@ -115,6 +116,10 @@ export function convertToEml(parsed: ParsedMsg): string {
 
   // Headers (using RFC 5322 header folding for long headers)
   eml += `${foldHeader("From", parsed.from)}\r\n`;
+  // Add Sender header for "on behalf of" scenarios (RFC 5322 section 3.6.2)
+  if (parsed.sender) {
+    eml += `${foldHeader("Sender", parsed.sender)}\r\n`;
+  }
   if (toRecipients.length > 0) {
     eml += `${foldHeader("To", toRecipients.map(formatRecipient).join(", "))}\r\n`;
   }

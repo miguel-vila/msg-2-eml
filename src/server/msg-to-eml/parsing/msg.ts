@@ -29,14 +29,15 @@ import { extractBodyFromRtf } from "../rtf/index.js";
 import type { Attachment, CalendarEvent, MessageHeaders, ParsedMsg } from "../types/index.js";
 import { parseAttachment, parseEmbeddedMessage } from "./attachment.js";
 import { parseRecipient } from "./recipient.js";
-import { extractSenderEmail, extractSenderName, formatSender } from "./sender.js";
+import { extractSenderInfo, formatSender } from "./sender.js";
 
 export function parseMsgFromMsg(msg: Msg, msgToEmlFromMsg: (msg: Msg) => string): ParsedMsg {
   const subject = msg.getProperty<string>(PidTagSubject) || "(No Subject)";
   let body = msg.getProperty<string>(PidTagBody) || "";
   let bodyHtml = msg.getProperty<string>(PidTagBodyHtml);
-  const senderEmail = extractSenderEmail(msg);
-  const senderName = extractSenderName(msg);
+  const senderInfo = extractSenderInfo(msg);
+  const senderEmail = senderInfo.from.email;
+  const senderName = senderInfo.from.name;
   const deliveryTime = msg.getProperty<Date>(PidTagMessageDeliveryTime);
 
   // If body is empty, try to extract from compressed RTF
@@ -149,9 +150,16 @@ export function parseMsgFromMsg(msg: Msg, msgToEmlFromMsg: (msg: Msg) => string)
     }
   }
 
+  // Build the sender header if this is an "on behalf of" scenario
+  const senderHeader =
+    senderInfo.isOnBehalfOf && senderInfo.sender
+      ? formatSender(senderInfo.sender.email, senderInfo.sender.name)
+      : undefined;
+
   return {
     subject,
     from,
+    sender: senderHeader,
     recipients,
     date: deliveryTime || new Date(),
     body,
