@@ -3,60 +3,114 @@
     "id": "sender-extraction",
     "description": "Improve sender email extraction. Currently falls back to 'unknown@unknown.com' when PidTagSenderEmailAddress is missing. Try additional properties: PidTagSenderSmtpAddress, PidTagSentRepresentingEmailAddress, PidTagSentRepresentingSmtpAddress. Also extract the sender name from PidTagSenderName or PidTagSentRepresentingName. Format as '\"Name\" <email>' when both are available.",
     "implemented": true,
-    "priority": 1
+    "priority": 1,
+    "testFiles": [
+      "src/server/msg-to-eml.test.ts:formatSender",
+      "src/server/msg-to-eml.test.ts:formatSender with non-ASCII names",
+      "src/server/msg-to-eml.integration.test.ts:Full MSG to EML Conversion"
+    ]
   },
   {
     "id": "message-headers",
     "description": "Extract and include important email headers from MSG properties: Message-ID (PidTagInternetMessageId), In-Reply-To (PidTagInReplyToId), References (PidTagInternetReferences), Reply-To (PidTagReplyRecipientNames with PidTagReplyRecipientEntries), X-Priority (map PidTagPriority/PidTagImportance to 1-5 scale). Add these headers to the EML output after the standard headers.",
     "implemented": true,
-    "priority": 2
+    "priority": 2,
+    "testFiles": [
+      "src/server/msg-to-eml.test.ts:mapToXPriority",
+      "src/server/msg-to-eml.test.ts:convertToEml with message headers",
+      "src/server/msg-to-eml.integration.test.ts:Header Extraction"
+    ]
   },
   {
     "id": "header-folding",
     "description": "Implement RFC 5322 header folding. Headers longer than 78 characters should be folded by inserting CRLF followed by a space or tab (continuation). Apply to Subject, To, Cc, Bcc, and other long headers. Be careful not to break in the middle of encoded words or email addresses.",
     "implemented": true,
-    "priority": 3
+    "priority": 3,
+    "testFiles": [
+      "src/server/msg-to-eml.test.ts:foldHeader",
+      "src/server/msg-to-eml.test.ts:convertToEml - should fold long To headers",
+      "src/server/msg-to-eml.test.ts:convertToEml - should fold long Subject headers",
+      "src/server/msg-to-eml.integration.test.ts:EML Output Compliance"
+    ]
   },
   {
     "id": "rtf-body",
     "description": "Support RTF body extraction. MSG files often store body as compressed RTF in PidTagRtfCompressed. Use the 'rtf-stream-parser' or similar npm package to decompress and convert RTF to plain text as a fallback when PidTagBody is empty. The RTF may contain the HTML version wrapped in \\fromhtml1 tags - extract that if present.",
     "implemented": true,
-    "priority": 4
+    "priority": 4,
+    "testFiles": [
+      "src/server/msg-to-eml.test.ts:extractBodyFromRtf",
+      "src/server/msg-to-eml.integration.test.ts:Special Content Types - should handle RTF body extraction"
+    ]
   },
   {
     "id": "inline-images",
     "description": "Support inline images in HTML emails. Attachments with PidTagAttachContentId should be treated as inline. In the EML output, use Content-ID header matching the CID, and set Content-Disposition to 'inline' instead of 'attachment'. The HTML body references these via 'cid:content-id-value'.",
     "implemented": true,
-    "priority": 5
+    "priority": 5,
+    "testFiles": [
+      "src/server/msg-to-eml.test.ts:convertToEml with inline images",
+      "src/server/msg-to-eml.integration.test.ts:Attachment Handling - should handle inline attachments with Content-ID"
+    ]
   },
   {
     "id": "embedded-messages",
     "description": "Support embedded MSG files (forwarded emails, attachments). Use msg.embeddedMessages() to detect them. For each embedded message, recursively convert to EML and attach with Content-Type 'message/rfc822'. Preserve the original filename if available from PidTagAttachLongFilename.",
     "implemented": true,
-    "priority": 6
+    "priority": 6,
+    "testFiles": [
+      "src/server/msg-to-eml.test.ts:convertToEml with embedded messages (message/rfc822)",
+      "src/server/msg-to-eml.integration.test.ts:Special Content Types - should handle embedded MSG files as message/rfc822"
+    ]
   },
   {
     "id": "filename-encoding",
     "description": "Properly encode non-ASCII attachment filenames using RFC 2231 encoding. Instead of filename=\"naïve.pdf\", use filename*=UTF-8''na%C3%AFve.pdf. Apply to both Content-Type name parameter and Content-Disposition filename parameter. Keep ASCII filenames as-is for compatibility.",
     "implemented": true,
-    "priority": 7
+    "priority": 7,
+    "testFiles": [
+      "src/server/msg-to-eml.test.ts:encodeRfc2231",
+      "src/server/msg-to-eml.test.ts:formatFilenameParams",
+      "src/server/msg-to-eml.test.ts:convertToEml with non-ASCII filenames"
+    ]
   },
   {
     "id": "subject-encoding",
     "description": "Encode non-ASCII subject lines using RFC 2047 MIME encoded-words. Format: =?UTF-8?B?base64-encoded-text?= for Base64 or =?UTF-8?Q?quoted-printable?= for quoted-printable. Split long encoded subjects into multiple encoded-words, each max 75 chars. Apply same encoding to From/To/Cc display names.",
     "implemented": true,
-    "priority": 8
+    "priority": 8,
+    "testFiles": [
+      "src/server/msg-to-eml.test.ts:encodeRfc2047",
+      "src/server/msg-to-eml.test.ts:encodeDisplayName",
+      "src/server/msg-to-eml.test.ts:convertToEml with non-ASCII subjects",
+      "src/server/msg-to-eml.test.ts:convertToEml with non-ASCII display names",
+      "src/server/msg-to-eml.integration.test.ts:EML Output Compliance - should encode non-ASCII content properly"
+    ]
   },
   {
     "id": "calendar-events",
     "description": "Basic support for calendar MSG files (IPM.Appointment message class). Extract: start time (PidLidAppointmentStartWhole), end time (PidLidAppointmentEndWhole), location (PidLidLocation), organizer, attendees. Generate a text/calendar MIME part with basic VCALENDAR/VEVENT structure.",
     "implemented": true,
-    "priority": 9
+    "priority": 9,
+    "testFiles": [
+      "src/server/msg-to-eml.test.ts:formatICalDateTime",
+      "src/server/msg-to-eml.test.ts:escapeICalText",
+      "src/server/msg-to-eml.test.ts:foldICalLine",
+      "src/server/msg-to-eml.test.ts:parseAttendeeString",
+      "src/server/msg-to-eml.test.ts:isCalendarMessage",
+      "src/server/msg-to-eml.test.ts:generateVCalendar",
+      "src/server/msg-to-eml.test.ts:convertToEml with calendar events",
+      "src/server/msg-to-eml.integration.test.ts:Special Content Types - should handle calendar events"
+    ]
   },
   {
     "id": "read-receipt",
     "description": "Preserve read receipt and delivery receipt request headers. Check PidTagReadReceiptRequested and PidTagOriginatorDeliveryReportRequested. If true, add Disposition-Notification-To header (for read receipt) and Return-Receipt-To header (for delivery receipt) with the sender's email.",
     "implemented": true,
-    "priority": 10
+    "priority": 10,
+    "testFiles": [
+      "src/server/msg-to-eml.test.ts:convertToEml with read and delivery receipt headers",
+      "src/server/msg-to-eml.integration.test.ts:Receipt Headers"
+    ]
   }
 ]
