@@ -195,9 +195,12 @@
   {
     "id": "sender-from-transport-headers",
     "description": "When no sender MAPI properties are available (PidTagSenderSmtpAddress, PidTagSenderEmailAddress, PidTagSentRepresentingSmtpAddress, PidTagSentRepresentingEmailAddress are all missing), fall back to parsing the From: header from PidTagTransportMessageHeaders as a last resort before using 'unknown@unknown.com'. Affected samples: fyicenter-sample.msg, strangeDate.msg, test_email.msg.",
-    "implemented": false,
+    "implemented": true,
     "priority": 20,
-    "testFiles": []
+    "testFiles": [
+      "src/server/msg-to-eml/parsing/__tests__/sender.test.ts:parseFromTransportHeaders",
+      "src/server/msg-to-eml/parsing/__tests__/sender.test.ts:extractSenderInfo - transport header fallback"
+    ]
   },
   {
     "id": "date-fallback-client-submit-time",

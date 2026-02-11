@@ -10,7 +10,7 @@ import {
   PidTagSentRepresentingSmtpAddress,
   type PropertyTag,
 } from "msg-parser";
-import { extractSenderInfo, formatSender } from "../sender.js";
+import { extractSenderInfo, formatSender, parseFromTransportHeaders } from "../sender.js";
 
 // Helper to create a mock Msg with specific property values
 interface MockPropertyValue {
@@ -302,5 +302,165 @@ describe("extractSenderInfo", () => {
       assert.strictEqual(result.isOnBehalfOf, false);
       assert.strictEqual(result.sender, undefined);
     });
+  });
+
+  describe("transport header fallback", () => {
+    it("should fall back to From: in transport headers when no MAPI sender properties exist", () => {
+      const msg = createMockMsg([]);
+      const transportHeaders = "From: fallback@example.com\r\nTo: recipient@example.com\r\n";
+
+      const result = extractSenderInfo(msg, transportHeaders);
+
+      assert.strictEqual(result.isOnBehalfOf, false);
+      assert.strictEqual(result.from.email, "fallback@example.com");
+      assert.strictEqual(result.from.name, undefined);
+      assert.strictEqual(result.sender, undefined);
+    });
+
+    it("should extract both name and email from transport headers", () => {
+      const msg = createMockMsg([]);
+      const transportHeaders = 'From: "John Doe" <john@example.com>\r\nTo: recipient@example.com\r\n';
+
+      const result = extractSenderInfo(msg, transportHeaders);
+
+      assert.strictEqual(result.from.email, "john@example.com");
+      assert.strictEqual(result.from.name, "John Doe");
+    });
+
+    it("should not use transport headers when MAPI sender properties exist", () => {
+      const msg = createMockMsg([
+        { tag: PidTagSenderSmtpAddress, value: "mapi@example.com" },
+        { tag: PidTagSenderName, value: "MAPI Sender" },
+      ]);
+      const transportHeaders = 'From: "Transport Sender" <transport@example.com>\r\n';
+
+      const result = extractSenderInfo(msg, transportHeaders);
+
+      assert.strictEqual(result.from.email, "mapi@example.com");
+      assert.strictEqual(result.from.name, "MAPI Sender");
+    });
+
+    it("should not use transport headers when represented sender properties exist", () => {
+      const msg = createMockMsg([{ tag: PidTagSentRepresentingSmtpAddress, value: "represented@example.com" }]);
+      const transportHeaders = 'From: "Transport Sender" <transport@example.com>\r\n';
+
+      const result = extractSenderInfo(msg, transportHeaders);
+
+      assert.strictEqual(result.from.email, "represented@example.com");
+    });
+
+    it("should handle missing transport headers gracefully", () => {
+      const msg = createMockMsg([]);
+
+      const result = extractSenderInfo(msg, undefined);
+
+      assert.strictEqual(result.from.email, undefined);
+      assert.strictEqual(result.from.name, undefined);
+    });
+
+    it("should handle transport headers without From: header", () => {
+      const msg = createMockMsg([]);
+      const transportHeaders = "To: recipient@example.com\r\nSubject: Test\r\n";
+
+      const result = extractSenderInfo(msg, transportHeaders);
+
+      assert.strictEqual(result.from.email, undefined);
+      assert.strictEqual(result.from.name, undefined);
+    });
+  });
+});
+
+describe("parseFromTransportHeaders", () => {
+  it("should parse bare email address", () => {
+    const result = parseFromTransportHeaders("From: user@example.com\r\n");
+
+    assert.notStrictEqual(result, undefined);
+    assert.strictEqual(result?.email, "user@example.com");
+    assert.strictEqual(result?.name, undefined);
+  });
+
+  it("should parse quoted display name with angle-bracket email", () => {
+    const result = parseFromTransportHeaders('From: "John Doe" <john@example.com>\r\n');
+
+    assert.notStrictEqual(result, undefined);
+    assert.strictEqual(result?.email, "john@example.com");
+    assert.strictEqual(result?.name, "John Doe");
+  });
+
+  it("should parse unquoted display name with angle-bracket email", () => {
+    const result = parseFromTransportHeaders("From: John Doe <john@example.com>\r\n");
+
+    assert.notStrictEqual(result, undefined);
+    assert.strictEqual(result?.email, "john@example.com");
+    assert.strictEqual(result?.name, "John Doe");
+  });
+
+  it("should parse angle-bracket email without display name", () => {
+    const result = parseFromTransportHeaders("From: <john@example.com>\r\n");
+
+    assert.notStrictEqual(result, undefined);
+    assert.strictEqual(result?.email, "john@example.com");
+    assert.strictEqual(result?.name, undefined);
+  });
+
+  it("should handle folded From: header", () => {
+    const headers = "From: Very Long Display Name\r\n <user@example.com>\r\nTo: other@example.com\r\n";
+
+    const result = parseFromTransportHeaders(headers);
+
+    assert.notStrictEqual(result, undefined);
+    assert.strictEqual(result?.email, "user@example.com");
+    assert.strictEqual(result?.name, "Very Long Display Name");
+  });
+
+  it("should return undefined when From: header is missing", () => {
+    const result = parseFromTransportHeaders("To: user@example.com\r\nSubject: Test\r\n");
+
+    assert.strictEqual(result, undefined);
+  });
+
+  it("should return undefined for empty string", () => {
+    const result = parseFromTransportHeaders("");
+
+    assert.strictEqual(result, undefined);
+  });
+
+  it("should handle case-insensitive From: header", () => {
+    const result = parseFromTransportHeaders("FROM: user@example.com\r\n");
+
+    assert.notStrictEqual(result, undefined);
+    assert.strictEqual(result?.email, "user@example.com");
+  });
+
+  it("should handle From: header among many headers", () => {
+    const headers = [
+      "Received: from mail.example.com",
+      "Date: Mon, 1 Jan 2024 12:00:00 +0000",
+      'From: "Sender Name" <sender@example.com>',
+      "To: recipient@example.com",
+      "Subject: Test",
+      "",
+    ].join("\r\n");
+
+    const result = parseFromTransportHeaders(headers);
+
+    assert.notStrictEqual(result, undefined);
+    assert.strictEqual(result?.email, "sender@example.com");
+    assert.strictEqual(result?.name, "Sender Name");
+  });
+
+  it("should handle LF line endings", () => {
+    const headers = "From: user@example.com\nTo: other@example.com\n";
+
+    const result = parseFromTransportHeaders(headers);
+
+    assert.notStrictEqual(result, undefined);
+    assert.strictEqual(result?.email, "user@example.com");
+  });
+
+  it("should handle From: header with empty value", () => {
+    const result = parseFromTransportHeaders("From: \r\nTo: other@example.com\r\n");
+
+    assert.strictEqual(result, undefined);
   });
 });

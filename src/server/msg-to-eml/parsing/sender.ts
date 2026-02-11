@@ -63,6 +63,72 @@ function extractRepresentedSenderName(msg: Msg): string | undefined {
 }
 
 /**
+ * Parses the From: header from raw transport message headers string.
+ * Returns the parsed email and display name, or undefined if not found.
+ *
+ * Handles formats like:
+ *   From: user@example.com
+ *   From: "Display Name" <user@example.com>
+ *   From: Display Name <user@example.com>
+ */
+export function parseFromTransportHeaders(transportHeaders: string): SenderInfo | undefined {
+  // Normalize line endings and unfold continuation lines
+  const normalized = transportHeaders.replace(/\r?\n/g, "\n");
+  const lines = normalized.split("\n");
+
+  let fromValue = "";
+  let foundFrom = false;
+
+  for (const line of lines) {
+    if (!foundFrom) {
+      // Match "From:" header (case-insensitive)
+      const match = line.match(/^from:\s*(.*)/i);
+      if (match) {
+        fromValue = match[1];
+        foundFrom = true;
+      }
+    } else if (line.startsWith(" ") || line.startsWith("\t")) {
+      // Continuation line (folded header)
+      fromValue += ` ${line.trim()}`;
+    } else {
+      // Next header starts, stop collecting
+      break;
+    }
+  }
+
+  if (!foundFrom || !fromValue.trim()) {
+    return undefined;
+  }
+
+  fromValue = fromValue.trim();
+
+  // Try to parse "Name <email>" or "<email>" format
+  const angleMatch = fromValue.match(/^(.*?)\s*<([^>]+)>\s*$/);
+  if (angleMatch) {
+    const rawName = angleMatch[1].replace(/^["']|["']$/g, "").trim();
+    const email = angleMatch[2].trim();
+    return {
+      email,
+      name: rawName || undefined,
+    };
+  }
+
+  // Check if the value looks like a bare email address
+  if (fromValue.includes("@")) {
+    return {
+      email: fromValue,
+      name: undefined,
+    };
+  }
+
+  // Only a display name, no email
+  return {
+    email: undefined,
+    name: fromValue,
+  };
+}
+
+/**
  * Normalizes an email address for comparison (lowercase, trim whitespace)
  */
 function normalizeEmail(email: string | undefined): string {
@@ -113,7 +179,7 @@ function isOnBehalfOfScenario(actual: SenderInfo, represented: SenderInfo): bool
  * - "From" header: The person being represented (author)
  * - "Sender" header: The actual sender (when different from From)
  */
-export function extractSenderInfo(msg: Msg): SenderResult {
+export function extractSenderInfo(msg: Msg, transportMessageHeaders?: string): SenderResult {
   const actualSender: SenderInfo = {
     email: extractActualSenderEmail(msg),
     name: extractActualSenderName(msg),
@@ -136,8 +202,17 @@ export function extractSenderInfo(msg: Msg): SenderResult {
   }
 
   // Normal scenario: use best available sender info (prefer actual, fall back to represented)
-  const bestEmail = actualSender.email || representedSender.email;
-  const bestName = actualSender.name || representedSender.name;
+  let bestEmail = actualSender.email || representedSender.email;
+  let bestName = actualSender.name || representedSender.name;
+
+  // Fallback: parse From: header from transport message headers when no MAPI sender properties are available
+  if (!bestEmail && !bestName && transportMessageHeaders) {
+    const fromTransport = parseFromTransportHeaders(transportMessageHeaders);
+    if (fromTransport) {
+      bestEmail = fromTransport.email;
+      bestName = fromTransport.name;
+    }
+  }
 
   return {
     from: { email: bestEmail, name: bestName },

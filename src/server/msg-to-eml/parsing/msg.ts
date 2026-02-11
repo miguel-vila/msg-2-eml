@@ -65,7 +65,8 @@ export function parseMsgFromMsg(msg: Msg, msgToEmlFromMsg: (msg: Msg) => string)
   const subject = msg.getProperty<string>(PidTagSubject) || "(No Subject)";
   let body = msg.getProperty<string>(PidTagBody) || "";
   let bodyHtml = msg.getProperty<string>(PidTagBodyHtml);
-  const senderInfo = extractSenderInfo(msg);
+  const transportMessageHeaders = msg.getProperty<string>(PidTagTransportMessageHeaders);
+  const senderInfo = extractSenderInfo(msg, transportMessageHeaders);
   const senderEmail = senderInfo.from.email;
   const senderName = senderInfo.from.name;
   const deliveryTime = msg.getProperty<Date>(PidTagMessageDeliveryTime);
@@ -138,7 +139,6 @@ export function parseMsgFromMsg(msg: Msg, msgToEmlFromMsg: (msg: Msg) => string)
   }
 
   // Extract original transport headers (Received, DKIM-Signature, SPF, Authentication-Results, etc.)
-  const transportMessageHeaders = msg.getProperty<string>(PidTagTransportMessageHeaders);
   if (transportMessageHeaders) {
     headers.transportMessageHeaders = transportMessageHeaders;
   }

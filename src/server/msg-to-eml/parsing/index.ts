@@ -6,6 +6,7 @@ export {
   extractSenderInfo,
   extractSenderName,
   formatSender,
+  parseFromTransportHeaders,
   type SenderInfo,
   type SenderResult,
 } from "./sender.js";
