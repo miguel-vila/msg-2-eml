@@ -29,6 +29,7 @@ const EXCLUDED_TRANSPORT_HEADERS = new Set([
   "list-help",
   "list-subscribe",
   "list-unsubscribe",
+  "keywords",
   "content-type",
   "content-transfer-encoding",
 ]);
@@ -181,6 +182,10 @@ export function convertToEml(parsed: ParsedMsg): string {
     }
     if (parsed.headers.listUnsubscribe) {
       eml += `${foldHeader("List-Unsubscribe", parsed.headers.listUnsubscribe)}\r\n`;
+    }
+    // Add Keywords header from Outlook categories (RFC 5322)
+    if (parsed.headers.keywords && parsed.headers.keywords.length > 0) {
+      eml += `${foldHeader("Keywords", parsed.headers.keywords.join(", "))}\r\n`;
     }
     // Add original transport headers (Received, DKIM-Signature, SPF, Authentication-Results, etc.)
     if (parsed.headers.transportMessageHeaders) {

@@ -2319,3 +2319,208 @@ From: list@example.com`;
     assert.ok(eml.includes("List-Unsubscribe: <https://example.com/unsubscribe>"), "Should have List-Unsubscribe");
   });
 });
+
+describe("convertToEml with keywords header (categories)", () => {
+  it("should include Keywords header with single category", () => {
+    const parsed = {
+      subject: "Categorized Email",
+      from: "sender@example.com",
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        keywords: ["Important"],
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Keywords: Important"), "Should have Keywords header with single category");
+  });
+
+  it("should include Keywords header with multiple categories joined by commas", () => {
+    const parsed = {
+      subject: "Multi-category Email",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        keywords: ["Important", "Follow-up", "Project X"],
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(
+      eml.includes("Keywords: Important, Follow-up, Project X"),
+      "Should have Keywords header with comma-separated categories",
+    );
+  });
+
+  it("should not include Keywords header when keywords is empty", () => {
+    const parsed = {
+      subject: "No Categories",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        keywords: [],
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(!eml.includes("Keywords:"), "Should not have Keywords header when array is empty");
+  });
+
+  it("should not include Keywords header when not present", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(!eml.includes("Keywords:"), "Should not have Keywords header when not present");
+  });
+
+  it("should place Keywords header before Content-Type", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        keywords: ["Urgent"],
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    const keywordsIndex = eml.indexOf("Keywords:");
+    const contentTypeIndex = eml.indexOf("Content-Type:");
+
+    assert.ok(keywordsIndex > 0, "Should have Keywords header");
+    assert.ok(keywordsIndex < contentTypeIndex, "Keywords should come before Content-Type");
+  });
+
+  it("should place Keywords header after mailing list headers", () => {
+    const parsed = {
+      subject: "Newsletter with Categories",
+      from: "list@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        listUnsubscribe: "<https://example.com/unsubscribe>",
+        keywords: ["Newsletter", "Weekly"],
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    const listUnsubscribeIndex = eml.indexOf("List-Unsubscribe:");
+    const keywordsIndex = eml.indexOf("Keywords:");
+
+    assert.ok(listUnsubscribeIndex > 0, "Should have List-Unsubscribe header");
+    assert.ok(keywordsIndex > 0, "Should have Keywords header");
+    assert.ok(listUnsubscribeIndex < keywordsIndex, "List-Unsubscribe should come before Keywords");
+  });
+
+  it("should fold long Keywords headers", () => {
+    const manyCategories = [
+      "Category One",
+      "Category Two",
+      "Category Three",
+      "Category Four",
+      "Category Five",
+      "Category Six",
+    ];
+
+    const parsed = {
+      subject: "Many Categories",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        keywords: manyCategories,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Keywords:"), "Should have Keywords header");
+
+    // The full value should be present (possibly folded)
+    const normalizedEml = eml.replace(/\r\n[\t ]/g, " ");
+    assert.ok(normalizedEml.includes(manyCategories.join(", ")), "Full Keywords value should be present");
+  });
+
+  it("should exclude Keywords from transport headers when we generate it", () => {
+    const transportHeaders = `Received: from mail.example.com by mx.example.org\r
+Keywords: Old Category\r
+From: sender@example.com`;
+
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        keywords: ["New Category"],
+        transportMessageHeaders: transportHeaders,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should use our generated Keywords, not the one from transport
+    assert.ok(eml.includes("Keywords: New Category"), "Should use generated Keywords");
+
+    // Count Keywords occurrences - should have exactly one
+    const keywordsMatches = eml.match(/Keywords:/g);
+    assert.strictEqual(keywordsMatches?.length, 1, "Should have exactly one Keywords header");
+  });
+
+  it("should work with other message headers", () => {
+    const parsed = {
+      subject: "Full Headers Email",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        messageId: "<test@example.com>",
+        priority: 1,
+        sensitivity: "Private" as const,
+        threadTopic: "Test Thread",
+        keywords: ["Important", "Urgent"],
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Message-ID: <test@example.com>"), "Should have Message-ID");
+    assert.ok(eml.includes("X-Priority: 1"), "Should have X-Priority");
+    assert.ok(eml.includes("Sensitivity: Private"), "Should have Sensitivity");
+    assert.ok(eml.includes("Thread-Topic: Test Thread"), "Should have Thread-Topic");
+    assert.ok(eml.includes("Keywords: Important, Urgent"), "Should have Keywords");
+  });
+});

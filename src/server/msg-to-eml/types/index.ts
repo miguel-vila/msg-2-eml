@@ -30,6 +30,8 @@ export interface MessageHeaders {
   listHelp?: string; // List-Help header URL (from PidTagListHelp)
   listSubscribe?: string; // List-Subscribe header URL (from PidTagListSubscribe)
   listUnsubscribe?: string; // List-Unsubscribe header URL (from PidTagListUnsubscribe)
+  // Categories / Keywords (RFC 5322)
+  keywords?: string[]; // Outlook categories mapped to Keywords header (from PidLidCategories)
 }
 
 export interface CalendarEvent {

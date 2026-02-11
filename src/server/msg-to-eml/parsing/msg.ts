@@ -2,6 +2,7 @@ import {
   Msg,
   PidLidAppointmentEndWhole,
   PidLidAppointmentStartWhole,
+  PidLidCategories,
   PidLidCcAttendeesString,
   PidLidLocation,
   PidLidToAttendeesString,
@@ -179,6 +180,18 @@ export function parseMsgFromMsg(msg: Msg, msgToEmlFromMsg: (msg: Msg) => string)
   const listUnsubscribe = msg.getProperty<string>(PidTagListUnsubscribe);
   if (listUnsubscribe) {
     headers.listUnsubscribe = listUnsubscribe;
+  }
+
+  // Extract Outlook categories (PidLidCategories) for Keywords header
+  // PidLidCategories uses named properties which may not be available in embedded messages,
+  // so we wrap in try-catch to handle gracefully.
+  try {
+    const categories = msg.getProperty<string[]>(PidLidCategories);
+    if (categories && categories.length > 0) {
+      headers.keywords = categories;
+    }
+  } catch {
+    // Named property mapping not available (e.g., embedded messages) - skip categories
   }
 
   // Check if this is a calendar appointment

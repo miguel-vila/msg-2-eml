@@ -170,16 +170,18 @@
   {
     "id": "mailing-list-headers",
     "description": "Extract mailing list metadata and add List-* headers. Map PidTagListHelp to List-Help, PidTagListSubscribe to List-Subscribe, and PidTagListUnsubscribe to List-Unsubscribe. These headers help email clients display unsubscribe options and identify mailing list messages.",
-    "implemented": false,
+    "implemented": true,
     "priority": 17,
     "testFiles": []
   },
   {
     "id": "categories-keywords",
     "description": "Map PidLidCategories to the Keywords MIME header (RFC 5322). Outlook categories are stored as a string array - join with commas for the Keywords header value. This preserves email organization/tagging from Outlook.",
-    "implemented": false,
+    "implemented": true,
     "priority": 18,
-    "testFiles": []
+    "testFiles": [
+      "src/server/msg-to-eml/converter/__tests__/eml.test.ts:convertToEml with keywords header (categories)"
+    ]
   },
   {
     "id": "auto-submitted-header",
