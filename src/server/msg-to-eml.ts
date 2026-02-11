@@ -1,44 +1,44 @@
+import { decompressRTF } from "@kenjiuno/decompressrtf";
+import * as iconvLite from "iconv-lite";
 import {
+  type EmbeddedMessage,
   Msg,
-  EmbeddedMessage,
-  Attachment as MsgAttachment,
-  Recipient as MsgRecipient,
-  PidTagSubject,
-  PidTagBody,
-  PidTagBodyHtml,
-  PidTagRtfCompressed,
-  PidTagSenderEmailAddress,
-  PidTagSenderSmtpAddress,
-  PidTagSenderName,
-  PidTagSentRepresentingEmailAddress,
-  PidTagSentRepresentingSmtpAddress,
-  PidTagSentRepresentingName,
-  PidTagMessageDeliveryTime,
-  PidTagDisplayName,
-  PidTagEmailAddress,
-  PidTagRecipientType,
-  PidTagAttachLongFilename,
-  PidTagAttachFilename,
-  PidTagAttachMimeTag,
-  PidTagAttachContentId,
-  PidTagInternetMessageId,
-  PidTagInReplyToId,
-  PidTagInternetReferences,
-  PidTagReplyRecipientNames,
-  PidTagPriority,
-  PidTagImportance,
-  PidTagMessageClass,
-  PidLidAppointmentStartWhole,
+  type Attachment as MsgAttachment,
+  type Recipient as MsgRecipient,
   PidLidAppointmentEndWhole,
+  PidLidAppointmentStartWhole,
+  PidLidCcAttendeesString,
   PidLidLocation,
   PidLidToAttendeesString,
-  PidLidCcAttendeesString,
-  PidTagReadReceiptRequested,
+  PidTagAttachContentId,
+  PidTagAttachFilename,
+  PidTagAttachLongFilename,
+  PidTagAttachMimeTag,
+  PidTagBody,
+  PidTagBodyHtml,
+  PidTagDisplayName,
+  PidTagEmailAddress,
+  PidTagImportance,
+  PidTagInReplyToId,
+  PidTagInternetMessageId,
+  PidTagInternetReferences,
+  PidTagMessageClass,
+  PidTagMessageDeliveryTime,
   PidTagOriginatorDeliveryReportRequested,
+  PidTagPriority,
+  PidTagReadReceiptRequested,
+  PidTagRecipientType,
+  PidTagReplyRecipientNames,
+  PidTagRtfCompressed,
+  PidTagSenderEmailAddress,
+  PidTagSenderName,
+  PidTagSenderSmtpAddress,
+  PidTagSentRepresentingEmailAddress,
+  PidTagSentRepresentingName,
+  PidTagSentRepresentingSmtpAddress,
+  PidTagSubject,
 } from "msg-parser";
-import { decompressRTF } from "@kenjiuno/decompressrtf";
 import { deEncapsulateSync } from "rtf-stream-parser";
-import * as iconvLite from "iconv-lite";
 
 interface Attachment {
   fileName: string;
@@ -85,7 +85,7 @@ interface ParsedMsg {
 }
 
 function generateBoundary(): string {
-  return "----=_Part_" + Math.random().toString(36).substring(2, 15);
+  return `----=_Part_${Math.random().toString(36).substring(2, 15)}`;
 }
 
 function formatEmailDate(date: Date): string {
@@ -109,7 +109,7 @@ function encodeBase64(data: Uint8Array | number[]): string {
 
 function encodeQuotedPrintable(str: string): string {
   return str.replace(/[^\x20-\x7E\r\n]|=/g, (char) => {
-    return "=" + char.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0");
+    return `=${char.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`;
   });
 }
 
@@ -137,7 +137,7 @@ export function foldHeader(headerName: string, headerValue: string, maxLineLengt
 
   while (remaining.length > 0) {
     // Calculate available space on current line (accounting for leading space)
-    const leadingSpace = isFirstSegment ? " " : "\t";
+    const _leadingSpace = isFirstSegment ? " " : "\t";
     const availableSpace = maxLineLength - currentLine.length - (isFirstSegment ? 1 : 0);
 
     if (isFirstSegment) {
@@ -210,7 +210,7 @@ function findSafeBreakPoint(str: string, maxPos: number): number {
   let inEncodedWord = false;
   let inAngleBracket = false;
   let inQuotes = false;
-  let encodedWordStart = -1;
+  let _encodedWordStart = -1;
 
   for (let i = 0; i < maxPos && i < str.length; i++) {
     const char = str[i];
@@ -219,7 +219,7 @@ function findSafeBreakPoint(str: string, maxPos: number): number {
     // Track encoded words (=?charset?encoding?text?=)
     if (char === "=" && nextChar === "?") {
       inEncodedWord = true;
-      encodedWordStart = i;
+      _encodedWordStart = i;
     } else if (inEncodedWord && char === "?" && nextChar === "=") {
       inEncodedWord = false;
       // Skip past the closing ?=
@@ -390,16 +390,16 @@ export function encodeRfc2231(filename: string): string {
     // For simplicity and safety, we only allow alphanumeric, -, ., and _
     if (
       (byte >= 0x30 && byte <= 0x39) || // 0-9
-      (byte >= 0x41 && byte <= 0x5A) || // A-Z
-      (byte >= 0x61 && byte <= 0x7A) || // a-z
-      byte === 0x2D || // -
-      byte === 0x2E || // .
-      byte === 0x5F    // _
+      (byte >= 0x41 && byte <= 0x5a) || // A-Z
+      (byte >= 0x61 && byte <= 0x7a) || // a-z
+      byte === 0x2d || // -
+      byte === 0x2e || // .
+      byte === 0x5f // _
     ) {
       encoded += String.fromCharCode(byte);
     } else {
       // Percent-encode the byte
-      encoded += "%" + byte.toString(16).toUpperCase().padStart(2, "0");
+      encoded += `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
     }
   }
 
@@ -461,8 +461,8 @@ function getRecipientType(type: number | undefined): "to" | "cc" | "bcc" {
 export function mapToXPriority(priority: number | undefined, importance: number | undefined): number | undefined {
   // Prefer PidTagPriority if available
   if (priority !== undefined) {
-    if (priority === 1) return 1;  // urgent -> highest
-    if (priority === 0) return 3;  // normal -> normal
+    if (priority === 1) return 1; // urgent -> highest
+    if (priority === 0) return 3; // normal -> normal
     if (priority === -1) return 5; // non-urgent -> lowest
   }
   // Fall back to PidTagImportance
@@ -530,7 +530,7 @@ export function foldICalLine(line: string): string {
 
   // Subsequent lines are prefixed with space, so content is up to 74 chars
   while (remaining.length > 0) {
-    result.push(" " + remaining.substring(0, 74));
+    result.push(` ${remaining.substring(0, 74)}`);
     remaining = remaining.substring(74);
   }
 
@@ -616,8 +616,7 @@ function parseRecipient(recipient: MsgRecipient): ParsedRecipient {
 
 function parseAttachment(attachment: MsgAttachment): Attachment | null {
   const fileName =
-    attachment.getProperty<string>(PidTagAttachLongFilename) ||
-    attachment.getProperty<string>(PidTagAttachFilename);
+    attachment.getProperty<string>(PidTagAttachLongFilename) || attachment.getProperty<string>(PidTagAttachFilename);
 
   if (!fileName) return null;
 
@@ -650,7 +649,7 @@ function parseEmbeddedMessage(msg: Msg, embeddedMessage: EmbeddedMessage): Attac
   // Ensure the filename has .eml extension
   const emlFileName = fileName.toLowerCase().endsWith(".eml")
     ? fileName
-    : fileName.replace(/\.msg$/i, ".eml") || fileName + ".eml";
+    : fileName.replace(/\.msg$/i, ".eml") || `${fileName}.eml`;
 
   // Extract the embedded message as a full Msg object
   const extractedMsg = msg.extractEmbeddedMessage(embeddedMessage);
@@ -677,11 +676,7 @@ function extractSenderEmail(msg: Msg): string | undefined {
 }
 
 function extractSenderName(msg: Msg): string | undefined {
-  return (
-    msg.getProperty<string>(PidTagSenderName) ||
-    msg.getProperty<string>(PidTagSentRepresentingName) ||
-    undefined
-  );
+  return msg.getProperty<string>(PidTagSenderName) || msg.getProperty<string>(PidTagSentRepresentingName) || undefined;
 }
 
 export function formatSender(email: string | undefined, name: string | undefined): string {
@@ -786,7 +781,7 @@ function extractPlainTextFromRtf(rtf: string): string {
         // Hex escape like \'e9 for é
         const hex = rtf.slice(i + 1, i + 3);
         const code = parseInt(hex, 16);
-        if (!isNaN(code)) {
+        if (!Number.isNaN(code)) {
           text += String.fromCharCode(code);
         }
         i += 3;
@@ -877,15 +872,14 @@ function parseMsgFromMsg(msg: Msg): ParsedMsg {
   const recipients = msg.recipients().map(parseRecipient);
 
   // Parse regular attachments
-  const regularAttachments = msg.attachments()
+  const regularAttachments = msg
+    .attachments()
     .map(parseAttachment)
     .filter((a): a is Attachment => a !== null);
 
   // Parse embedded messages (forwarded emails, attached emails)
   const embeddedMessages = msg.embeddedMessages();
-  const embeddedAttachments = embeddedMessages.map((embedded) =>
-    parseEmbeddedMessage(msg, embedded)
-  );
+  const embeddedAttachments = embeddedMessages.map((embedded) => parseEmbeddedMessage(msg, embedded));
 
   // Combine regular attachments and embedded message attachments
   const attachments = [...regularAttachments, ...embeddedAttachments];
@@ -934,10 +928,7 @@ function parseMsgFromMsg(msg: Msg): ParsedMsg {
       const ccAttendees = msg.getProperty<string>(PidLidCcAttendeesString);
 
       // Combine To and Cc attendees
-      const attendees = [
-        ...parseAttendeeString(toAttendees),
-        ...parseAttendeeString(ccAttendees),
-      ];
+      const attendees = [...parseAttendeeString(toAttendees), ...parseAttendeeString(ccAttendees)];
 
       // Use sender as organizer
       const organizer = senderEmail || senderName;
@@ -1001,43 +992,43 @@ export function convertToEml(parsed: ParsedMsg): string {
   let eml = "";
 
   // Headers (using RFC 5322 header folding for long headers)
-  eml += foldHeader("From", parsed.from) + "\r\n";
+  eml += `${foldHeader("From", parsed.from)}\r\n`;
   if (toRecipients.length > 0) {
-    eml += foldHeader("To", toRecipients.map(formatRecipient).join(", ")) + "\r\n";
+    eml += `${foldHeader("To", toRecipients.map(formatRecipient).join(", "))}\r\n`;
   }
   if (ccRecipients.length > 0) {
-    eml += foldHeader("Cc", ccRecipients.map(formatRecipient).join(", ")) + "\r\n";
+    eml += `${foldHeader("Cc", ccRecipients.map(formatRecipient).join(", "))}\r\n`;
   }
   if (bccRecipients.length > 0) {
-    eml += foldHeader("Bcc", bccRecipients.map(formatRecipient).join(", ")) + "\r\n";
+    eml += `${foldHeader("Bcc", bccRecipients.map(formatRecipient).join(", "))}\r\n`;
   }
   // Encode non-ASCII subjects using RFC 2047
-  eml += foldHeader("Subject", encodeRfc2047(parsed.subject)) + "\r\n";
+  eml += `${foldHeader("Subject", encodeRfc2047(parsed.subject))}\r\n`;
   eml += `Date: ${formatEmailDate(parsed.date)}\r\n`;
   eml += `MIME-Version: 1.0\r\n`;
 
   // Add additional message headers (using header folding for potentially long headers)
   if (parsed.headers) {
     if (parsed.headers.messageId) {
-      eml += foldHeader("Message-ID", parsed.headers.messageId) + "\r\n";
+      eml += `${foldHeader("Message-ID", parsed.headers.messageId)}\r\n`;
     }
     if (parsed.headers.inReplyTo) {
-      eml += foldHeader("In-Reply-To", parsed.headers.inReplyTo) + "\r\n";
+      eml += `${foldHeader("In-Reply-To", parsed.headers.inReplyTo)}\r\n`;
     }
     if (parsed.headers.references) {
-      eml += foldHeader("References", parsed.headers.references) + "\r\n";
+      eml += `${foldHeader("References", parsed.headers.references)}\r\n`;
     }
     if (parsed.headers.replyTo) {
-      eml += foldHeader("Reply-To", parsed.headers.replyTo) + "\r\n";
+      eml += `${foldHeader("Reply-To", parsed.headers.replyTo)}\r\n`;
     }
     if (parsed.headers.priority !== undefined) {
       eml += `X-Priority: ${parsed.headers.priority}\r\n`;
     }
     if (parsed.headers.dispositionNotificationTo) {
-      eml += foldHeader("Disposition-Notification-To", parsed.headers.dispositionNotificationTo) + "\r\n";
+      eml += `${foldHeader("Disposition-Notification-To", parsed.headers.dispositionNotificationTo)}\r\n`;
     }
     if (parsed.headers.returnReceiptTo) {
-      eml += foldHeader("Return-Receipt-To", parsed.headers.returnReceiptTo) + "\r\n";
+      eml += `${foldHeader("Return-Receipt-To", parsed.headers.returnReceiptTo)}\r\n`;
     }
   }
 
@@ -1122,7 +1113,7 @@ export function convertToEml(parsed: ParsedMsg): string {
       part += `\r\n`;
       const base64 = encodeBase64(att.content);
       for (let i = 0; i < base64.length; i += 76) {
-        part += base64.slice(i, i + 76) + "\r\n";
+        part += `${base64.slice(i, i + 76)}\r\n`;
       }
     }
     return part;

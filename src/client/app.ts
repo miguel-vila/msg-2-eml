@@ -100,7 +100,7 @@ class MsgToEmlConverter {
         <span class="file-size">${this.formatSize(f.size)}</span>
         <button class="remove-btn" data-index="${i}">&times;</button>
       </div>
-    `
+    `,
       )
       .join("");
 
@@ -110,7 +110,7 @@ class MsgToEmlConverter {
     this.fileList.querySelectorAll(".remove-btn").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
-        const index = parseInt((btn as HTMLElement).dataset.index!);
+        const index = parseInt((btn as HTMLElement).dataset.index!, 10);
         this.selectedFiles.splice(index, 1);
         this.updateFileList();
         this.updateButtons();
@@ -149,7 +149,7 @@ class MsgToEmlConverter {
     } else {
       this.showStatus(
         `Converted ${successCount} file(s), ${failCount} failed`,
-        failCount === this.results.length ? "error" : "warning"
+        failCount === this.results.length ? "error" : "warning",
       );
     }
 
@@ -240,9 +240,9 @@ class MsgToEmlConverter {
   }
 
   private formatSize(bytes: number): string {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   private escapeHtml(str: string): string {

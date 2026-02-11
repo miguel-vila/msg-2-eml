@@ -1,6 +1,22 @@
-import { describe, it } from "node:test";
 import assert from "node:assert";
-import { convertToEml, formatSender, mapToXPriority, foldHeader, extractBodyFromRtf, parseMsg, encodeRfc2231, formatFilenameParams, encodeRfc2047, encodeDisplayName, formatICalDateTime, escapeICalText, foldICalLine, parseAttendeeString, isCalendarMessage, generateVCalendar } from "./msg-to-eml.js";
+import { describe, it } from "node:test";
+import {
+  convertToEml,
+  encodeDisplayName,
+  encodeRfc2047,
+  encodeRfc2231,
+  escapeICalText,
+  extractBodyFromRtf,
+  foldHeader,
+  foldICalLine,
+  formatFilenameParams,
+  formatICalDateTime,
+  formatSender,
+  generateVCalendar,
+  isCalendarMessage,
+  mapToXPriority,
+  parseAttendeeString,
+} from "./msg-to-eml.js";
 
 /**
  * Creates an uncompressed RTF format for PidTagRtfCompressed.
@@ -11,7 +27,7 @@ function createUncompressedRtf(rtfContent: string): number[] {
   const rawBytes = Buffer.from(rtfContent, "latin1");
   const rawSize = rawBytes.length;
   const fileSize = rawSize + 12; // rawSize + compType + crc (fileSize excludes itself)
-  const UNCOMPRESSED = 0x414C454D; // "MELA" in little-endian
+  const UNCOMPRESSED = 0x414c454d; // "MELA" in little-endian
   const crc = 0; // CRC is not checked for uncompressed
 
   const result: number[] = [];
@@ -198,7 +214,8 @@ describe("convertToEml", () => {
   });
 
   it("should fold long Subject headers", () => {
-    const longSubject = "This is a very very very long subject line that will definitely exceed the 78 character limit according to RFC 5322";
+    const longSubject =
+      "This is a very very very long subject line that will definitely exceed the 78 character limit according to RFC 5322";
     const parsed = {
       subject: longSubject,
       from: "sender@example.com",
@@ -305,7 +322,8 @@ describe("foldHeader", () => {
   });
 
   it("should fold headers longer than 78 characters", () => {
-    const longSubject = "This is a very long subject line that exceeds the 78 character limit and needs to be folded properly";
+    const longSubject =
+      "This is a very long subject line that exceeds the 78 character limit and needs to be folded properly";
     const result = foldHeader("Subject", longSubject);
 
     // Should contain CRLF followed by tab (continuation)
@@ -344,7 +362,8 @@ describe("foldHeader", () => {
   });
 
   it("should fold recipient lists at appropriate points", () => {
-    const recipients = '"Alice Smith" <alice@example.com>, "Bob Johnson" <bob@example.com>, "Charlie Brown" <charlie@example.com>';
+    const recipients =
+      '"Alice Smith" <alice@example.com>, "Bob Johnson" <bob@example.com>, "Charlie Brown" <charlie@example.com>';
     const result = foldHeader("To", recipients);
 
     // Should be folded
@@ -636,7 +655,10 @@ describe("convertToEml with inline images", () => {
     assert.ok(eml.includes("Content-Disposition: inline"), "Inline attachment should have inline disposition");
 
     // Regular attachment should have attachment disposition
-    assert.ok(eml.includes('Content-Disposition: attachment; filename="document.pdf"'), "Regular attachment should have attachment disposition");
+    assert.ok(
+      eml.includes('Content-Disposition: attachment; filename="document.pdf"'),
+      "Regular attachment should have attachment disposition",
+    );
   });
 
   it("should not add Content-ID header for regular attachments", () => {
@@ -705,20 +727,21 @@ describe("extractBodyFromRtf", () => {
     const result = extractBodyFromRtf(uncompressed);
 
     assert.ok(result !== null, "Should return a result");
-    assert.ok(result!.text.includes("Hello World"), "Should extract text content");
-    assert.strictEqual(result!.html, undefined, "Should not have HTML for plain text RTF");
+    assert.ok(result?.text.includes("Hello World"), "Should extract text content");
+    assert.strictEqual(result?.html, undefined, "Should not have HTML for plain text RTF");
   });
 
   it("should extract HTML from RTF-encapsulated HTML (fromhtml)", () => {
     // RTF with encapsulated HTML using \fromhtml1
-    const rtf = "{\\rtf1\\ansi\\fromhtml1 {\\*\\htmltag64 <html>}{\\*\\htmltag64 <body>}Hello HTML{\\*\\htmltag64 </body>}{\\*\\htmltag64 </html>}}";
+    const rtf =
+      "{\\rtf1\\ansi\\fromhtml1 {\\*\\htmltag64 <html>}{\\*\\htmltag64 <body>}Hello HTML{\\*\\htmltag64 </body>}{\\*\\htmltag64 </html>}}";
     const uncompressed = createUncompressedRtf(rtf);
     const result = extractBodyFromRtf(uncompressed);
 
     assert.ok(result !== null, "Should return a result");
-    assert.ok(result!.html !== undefined, "Should extract HTML");
-    assert.ok(result!.html!.includes("Hello HTML"), "HTML should contain content");
-    assert.ok(result!.text.includes("Hello HTML"), "Should also provide plain text fallback");
+    assert.ok(result?.html !== undefined, "Should extract HTML");
+    assert.ok(result?.html?.includes("Hello HTML"), "HTML should contain content");
+    assert.ok(result?.text.includes("Hello HTML"), "Should also provide plain text fallback");
   });
 
   it("should return null for invalid compressed RTF", () => {
@@ -741,7 +764,7 @@ describe("extractBodyFromRtf", () => {
 
     assert.ok(result !== null, "Should return a result");
     // The text should contain the decoded special characters
-    assert.ok(result!.text.length > 0, "Should have extracted text");
+    assert.ok(result?.text.length > 0, "Should have extracted text");
   });
 
   it("should strip HTML tags when providing plain text from HTML content", () => {
@@ -750,10 +773,10 @@ describe("extractBodyFromRtf", () => {
     const result = extractBodyFromRtf(uncompressed);
 
     assert.ok(result !== null, "Should return a result");
-    if (result!.html) {
+    if (result?.html) {
       // Plain text version should not contain HTML tags
-      assert.ok(!result!.text.includes("<p>"), "Plain text should not contain <p> tag");
-      assert.ok(!result!.text.includes("</p>"), "Plain text should not contain </p> tag");
+      assert.ok(!result?.text.includes("<p>"), "Plain text should not contain <p> tag");
+      assert.ok(!result?.text.includes("</p>"), "Plain text should not contain </p> tag");
     }
   });
 });
@@ -1250,7 +1273,7 @@ describe("convertToEml with non-ASCII subjects", () => {
     assert.ok(subjectLine, "Should have Subject header");
 
     // Handle potential folding by normalizing
-    const normalizedSubject = subjectLine!.replace(/\r\n[\t ]/g, " ");
+    const normalizedSubject = subjectLine?.replace(/\r\n[\t ]/g, " ");
     const encodedParts = normalizedSubject.match(/=\?UTF-8\?B\?[^?]+\?=/g) || [];
     const decoded = encodedParts
       .map((part) => {
@@ -1381,7 +1404,8 @@ describe("foldICalLine", () => {
   });
 
   it("should fold long lines at 75 characters", () => {
-    const longLine = "DESCRIPTION:This is a very long description that definitely exceeds the 75 character limit for iCalendar lines";
+    const longLine =
+      "DESCRIPTION:This is a very long description that definitely exceeds the 75 character limit for iCalendar lines";
     const result = foldICalLine(longLine);
 
     const lines = result.split("\r\n");
@@ -1639,7 +1663,10 @@ describe("convertToEml with read and delivery receipt headers", () => {
 
     const eml = convertToEml(parsed);
 
-    assert.ok(eml.includes("Disposition-Notification-To: sender@example.com"), "Should have Disposition-Notification-To header");
+    assert.ok(
+      eml.includes("Disposition-Notification-To: sender@example.com"),
+      "Should have Disposition-Notification-To header",
+    );
   });
 
   it("should include Return-Receipt-To header when delivery receipt is requested", () => {
@@ -1676,7 +1703,10 @@ describe("convertToEml with read and delivery receipt headers", () => {
 
     const eml = convertToEml(parsed);
 
-    assert.ok(eml.includes("Disposition-Notification-To: sender@example.com"), "Should have Disposition-Notification-To header");
+    assert.ok(
+      eml.includes("Disposition-Notification-To: sender@example.com"),
+      "Should have Disposition-Notification-To header",
+    );
     assert.ok(eml.includes("Return-Receipt-To: sender@example.com"), "Should have Return-Receipt-To header");
   });
 
@@ -1741,6 +1771,9 @@ describe("convertToEml with read and delivery receipt headers", () => {
     const eml = convertToEml(parsed);
 
     assert.ok(eml.includes("X-Priority: 1"), "Should have X-Priority header");
-    assert.ok(eml.includes("Disposition-Notification-To: sender@example.com"), "Should have Disposition-Notification-To header");
+    assert.ok(
+      eml.includes("Disposition-Notification-To: sender@example.com"),
+      "Should have Disposition-Notification-To header",
+    );
   });
 });

@@ -1,9 +1,9 @@
-import { describe, it, before, after } from "node:test";
 import assert from "node:assert";
-import { readFileSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { msgToEml, parseMsg, convertToEml } from "./msg-to-eml.js";
+import { convertToEml, msgToEml, parseMsg } from "./msg-to-eml.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, "..", "..", "test", "fixtures");
@@ -58,17 +58,14 @@ function validateHeaderFolding(eml: string): void {
 
   // Physical lines should not exceed 998 characters (MUST per RFC 5322)
   for (const line of lines) {
-    assert.ok(
-      line.length <= 998,
-      `Line exceeds 998 character limit: ${line.substring(0, 50)}...`
-    );
+    assert.ok(line.length <= 998, `Line exceeds 998 character limit: ${line.substring(0, 50)}...`);
   }
 }
 
 /**
  * Validates MIME multipart structure
  */
-function validateMultipartStructure(eml: string, boundary: string): void {
+function _validateMultipartStructure(eml: string, boundary: string): void {
   // Check boundary markers exist
   assert.ok(eml.includes(`--${boundary}`), "Missing boundary markers");
   assert.ok(eml.includes(`--${boundary}--`), "Missing closing boundary");
@@ -104,10 +101,7 @@ describe("Integration Tests", () => {
       const eml = convertToEml(parsed);
       if (parsed.subject && parsed.subject.length > 0) {
         // Subject may be encoded, but should be present
-        assert.ok(
-          eml.includes("Subject:"),
-          "Converted EML should have Subject header"
-        );
+        assert.ok(eml.includes("Subject:"), "Converted EML should have Subject header");
       }
     });
 
@@ -136,7 +130,7 @@ describe("Integration Tests", () => {
       // Should be a valid MIME type
       assert.ok(
         contentType.includes("text/") || contentType.includes("multipart/"),
-        `Content-Type should be text/* or multipart/*: ${contentType}`
+        `Content-Type should be text/* or multipart/*: ${contentType}`,
       );
     });
 
@@ -151,10 +145,8 @@ describe("Integration Tests", () => {
       // RFC 5322 date format: day-name, day month year hour:minute:second zone
       // Example: Mon, 15 Jan 2024 10:30:00 +0000
       assert.ok(
-        /[A-Z][a-z]{2},\s+\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4}\s+\d{2}:\d{2}:\d{2}\s+[+-]\d{4}/.test(
-          dateValue
-        ),
-        `Date should be in RFC 5322 format: ${dateValue}`
+        /[A-Z][a-z]{2},\s+\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4}\s+\d{2}:\d{2}:\d{2}\s+[+-]\d{4}/.test(dateValue),
+        `Date should be in RFC 5322 format: ${dateValue}`,
       );
     });
 
@@ -178,10 +170,7 @@ describe("Integration Tests", () => {
       const eml = convertToEml(testParsed);
 
       // Should use RFC 2047 encoding for non-ASCII
-      assert.ok(
-        eml.includes("=?UTF-8?") || eml.includes("=?utf-8?"),
-        "Non-ASCII content should be RFC 2047 encoded"
-      );
+      assert.ok(eml.includes("=?UTF-8?") || eml.includes("=?utf-8?"), "Non-ASCII content should be RFC 2047 encoded");
     });
   });
 
@@ -194,16 +183,10 @@ describe("Integration Tests", () => {
         const eml = convertToEml(parsed);
 
         // If there are attachments, should have multipart structure
-        assert.ok(
-          eml.includes("multipart/"),
-          "Messages with attachments should be multipart"
-        );
+        assert.ok(eml.includes("multipart/"), "Messages with attachments should be multipart");
 
         // Attachments should be base64 encoded
-        assert.ok(
-          eml.includes("Content-Transfer-Encoding: base64"),
-          "Attachments should be base64 encoded"
-        );
+        assert.ok(eml.includes("Content-Transfer-Encoding: base64"), "Attachments should be base64 encoded");
       } else {
         // No attachments - just verify the test runs
         assert.ok(true, "No attachments in this test file");
@@ -231,16 +214,10 @@ describe("Integration Tests", () => {
       const eml = convertToEml(testParsed);
 
       // Should have Content-ID header for inline attachment
-      assert.ok(
-        eml.includes("Content-ID: <image001@test.local>"),
-        "Inline attachment should have Content-ID"
-      );
+      assert.ok(eml.includes("Content-ID: <image001@test.local>"), "Inline attachment should have Content-ID");
 
       // Should use multipart/related for inline images
-      assert.ok(
-        eml.includes("multipart/related"),
-        "Inline images should use multipart/related"
-      );
+      assert.ok(eml.includes("multipart/related"), "Inline images should use multipart/related");
     });
   });
 
@@ -251,10 +228,7 @@ describe("Integration Tests", () => {
 
       if (parsed.headers?.messageId) {
         const eml = convertToEml(parsed);
-        assert.ok(
-          eml.includes("Message-ID:") || eml.includes("Message-Id:"),
-          "Should include Message-ID header"
-        );
+        assert.ok(eml.includes("Message-ID:") || eml.includes("Message-Id:"), "Should include Message-ID header");
       } else {
         // Not all MSG files have Message-ID
         assert.ok(true, "No Message-ID in source file");
@@ -275,10 +249,7 @@ describe("Integration Tests", () => {
       };
 
       const eml = convertToEml(testParsed);
-      assert.ok(
-        eml.includes("X-Priority: 1"),
-        "Should include X-Priority header"
-      );
+      assert.ok(eml.includes("X-Priority: 1"), "Should include X-Priority header");
     });
   });
 
@@ -302,16 +273,10 @@ describe("Integration Tests", () => {
       const eml = convertToEml(testParsed);
 
       // Should have text/calendar content type
-      assert.ok(
-        eml.includes("text/calendar"),
-        "Calendar events should have text/calendar part"
-      );
+      assert.ok(eml.includes("text/calendar"), "Calendar events should have text/calendar part");
 
       // Should have VCALENDAR structure
-      assert.ok(
-        eml.includes("BEGIN:VCALENDAR"),
-        "Should include VCALENDAR start"
-      );
+      assert.ok(eml.includes("BEGIN:VCALENDAR"), "Should include VCALENDAR start");
       assert.ok(eml.includes("BEGIN:VEVENT"), "Should include VEVENT start");
       assert.ok(eml.includes("END:VEVENT"), "Should include VEVENT end");
       assert.ok(eml.includes("END:VCALENDAR"), "Should include VCALENDAR end");
@@ -327,9 +292,7 @@ describe("Integration Tests", () => {
         attachments: [
           {
             fileName: "forwarded.eml",
-            content: new TextEncoder().encode(
-              "From: test@example.com\r\nSubject: Embedded\r\n\r\nBody"
-            ),
+            content: new TextEncoder().encode("From: test@example.com\r\nSubject: Embedded\r\n\r\nBody"),
             contentType: "message/rfc822",
             isEmbeddedMessage: true,
           },
@@ -339,10 +302,7 @@ describe("Integration Tests", () => {
       const eml = convertToEml(testParsed);
 
       // Should have message/rfc822 content type
-      assert.ok(
-        eml.includes("message/rfc822"),
-        "Embedded messages should have message/rfc822 type"
-      );
+      assert.ok(eml.includes("message/rfc822"), "Embedded messages should have message/rfc822 type");
     });
 
     it("should handle RTF body extraction", () => {
@@ -351,10 +311,7 @@ describe("Integration Tests", () => {
 
       // The parsed message should have a body
       // (may come from plain text, HTML, or RTF)
-      assert.ok(
-        parsed.body !== undefined,
-        "Should extract body from MSG file"
-      );
+      assert.ok(parsed.body !== undefined, "Should extract body from MSG file");
     });
   });
 
@@ -372,10 +329,7 @@ describe("Integration Tests", () => {
       };
 
       const eml = convertToEml(testParsed);
-      assert.ok(
-        eml.includes("Disposition-Notification-To:"),
-        "Should include Disposition-Notification-To header"
-      );
+      assert.ok(eml.includes("Disposition-Notification-To:"), "Should include Disposition-Notification-To header");
     });
 
     it("should include Return-Receipt-To for delivery receipts", () => {
@@ -391,10 +345,7 @@ describe("Integration Tests", () => {
       };
 
       const eml = convertToEml(testParsed);
-      assert.ok(
-        eml.includes("Return-Receipt-To:"),
-        "Should include Return-Receipt-To header"
-      );
+      assert.ok(eml.includes("Return-Receipt-To:"), "Should include Return-Receipt-To header");
     });
   });
 });

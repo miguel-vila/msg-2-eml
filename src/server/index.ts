@@ -1,7 +1,7 @@
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
-import { existsSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
 import { msgToEml } from "./msg-to-eml.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -29,10 +29,7 @@ app.post("/api/convert", async (req, res) => {
       return;
     }
 
-    const arrayBuffer = buffer.buffer.slice(
-      buffer.byteOffset,
-      buffer.byteOffset + buffer.byteLength
-    ) as ArrayBuffer;
+    const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
 
     const eml = msgToEml(arrayBuffer);
 
@@ -43,13 +40,13 @@ app.post("/api/convert", async (req, res) => {
     console.error("Conversion error:", error);
     res.status(500).json({
       error: "Failed to convert file",
-      details: error instanceof Error ? error.message : String(error)
+      details: error instanceof Error ? error.message : String(error),
     });
   }
 });
 
 // Fallback to index.html for SPA
-app.get("*", (req, res) => {
+app.get("*", (_req, res) => {
   const indexPath = join(clientPath, "index.html");
   if (existsSync(indexPath)) {
     res.sendFile(indexPath);
