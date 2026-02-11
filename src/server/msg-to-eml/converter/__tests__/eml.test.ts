@@ -2719,3 +2719,173 @@ From: sender@example.com`;
     assert.ok(!eml.includes("Auto-Submitted:"), "Should not have Auto-Submitted when not set");
   });
 });
+
+describe("convertToEml with empty body handling", () => {
+  it("should omit body MIME part entirely when body is empty and no attachments", () => {
+    const parsed = {
+      subject: "Empty Body Email",
+      from: "sender@example.com",
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date("2024-01-15T10:30:00Z"),
+      body: "",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should have headers
+    assert.ok(eml.includes("From: sender@example.com"), "Should have From header");
+    assert.ok(eml.includes("Subject: Empty Body Email"), "Should have Subject header");
+    assert.ok(eml.includes("MIME-Version: 1.0"), "Should have MIME-Version header");
+
+    // Should NOT have Content-Type or Content-Transfer-Encoding for a body
+    assert.ok(!eml.includes("Content-Type:"), "Should not have Content-Type when body is empty");
+    assert.ok(
+      !eml.includes("Content-Transfer-Encoding:"),
+      "Should not have Content-Transfer-Encoding when body is empty",
+    );
+
+    // Should end with just the header section followed by empty line
+    assert.ok(eml.endsWith("\r\n\r\n"), "Should end with header/body separator");
+  });
+
+  it("should omit text/plain part when body is empty but attachments exist", () => {
+    const parsed = {
+      subject: "Attachments Only",
+      from: "sender@example.com",
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date(),
+      body: "",
+      attachments: [
+        {
+          fileName: "document.pdf",
+          content: new Uint8Array([37, 80, 68, 70]),
+          contentType: "application/pdf",
+        },
+      ],
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should have multipart/mixed structure for attachments
+    assert.ok(eml.includes("multipart/mixed"), "Should use multipart/mixed for attachments");
+
+    // Should have the attachment
+    assert.ok(eml.includes("application/pdf"), "Should include PDF attachment");
+    assert.ok(eml.includes('filename="document.pdf"'), "Should include attachment filename");
+
+    // Should NOT have a text/plain part
+    assert.ok(!eml.includes("text/plain"), "Should not have text/plain part when body is empty");
+  });
+
+  it("should still generate text/plain part when body has content", () => {
+    const parsed = {
+      subject: "Normal Email",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Hello, this is a message.",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes('Content-Type: text/plain; charset="utf-8"'), "Should have text/plain Content-Type");
+    assert.ok(eml.includes("Hello, this is a message."), "Should contain body text");
+  });
+
+  it("should still generate text/plain part with attachments when body has content", () => {
+    const parsed = {
+      subject: "Email with Body and Attachment",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "See attached file.",
+      attachments: [
+        {
+          fileName: "file.txt",
+          content: new Uint8Array([72, 101, 108, 108, 111]),
+          contentType: "text/plain",
+        },
+      ],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("multipart/mixed"), "Should use multipart/mixed");
+    assert.ok(eml.includes('Content-Type: text/plain; charset="utf-8"'), "Should have text/plain part for body");
+    assert.ok(eml.includes("See attached file."), "Should contain body text");
+    assert.ok(eml.includes('filename="file.txt"'), "Should include attachment");
+  });
+
+  it("should handle empty body with HTML content (use HTML as primary content)", () => {
+    const parsed = {
+      subject: "HTML Only Email",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "",
+      bodyHtml: "<html><body><p>HTML content</p></body></html>",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should still generate multipart/alternative with HTML
+    assert.ok(eml.includes("multipart/alternative"), "Should use multipart/alternative for HTML");
+    assert.ok(eml.includes("text/html"), "Should have text/html part");
+  });
+
+  it("should handle empty body with multiple attachments", () => {
+    const parsed = {
+      subject: "Multiple Attachments No Body",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "",
+      attachments: [
+        {
+          fileName: "doc1.pdf",
+          content: new Uint8Array([37, 80, 68, 70]),
+          contentType: "application/pdf",
+        },
+        {
+          fileName: "doc2.pdf",
+          content: new Uint8Array([37, 80, 68, 70]),
+          contentType: "application/pdf",
+        },
+      ],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("multipart/mixed"), "Should use multipart/mixed");
+    assert.ok(!eml.includes("text/plain"), "Should not have text/plain part");
+    assert.ok(eml.includes('filename="doc1.pdf"'), "Should include first attachment");
+    assert.ok(eml.includes('filename="doc2.pdf"'), "Should include second attachment");
+  });
+
+  it("should produce valid EML structure when body is empty and no attachments", () => {
+    const parsed = {
+      subject: "Empty",
+      from: "sender@example.com",
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date("2024-01-15T10:30:00Z"),
+      body: "",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should have CRLF line endings
+    assert.ok(eml.includes("\r\n"), "EML should use CRLF line endings");
+
+    // Should have a header/body separator (double CRLF)
+    assert.ok(eml.includes("\r\n\r\n"), "Should have header/body separator");
+
+    // Should have required headers
+    assert.ok(eml.includes("From:"), "Should have From header");
+    assert.ok(eml.includes("Date:"), "Should have Date header");
+    assert.ok(eml.includes("MIME-Version: 1.0"), "Should have MIME-Version header");
+  });
+});

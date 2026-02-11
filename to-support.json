@@ -224,8 +224,10 @@
   {
     "id": "empty-body-handling",
     "description": "Improve handling of MSG files with no body content at all (no PidTagBody, no PidTagBodyHtml, no PidTagRtfCompressed). Currently the EML is generated with an empty body part. Consider generating a minimal text/plain part or omitting the body MIME part entirely when there is truly no content. Affected samples: msgKitOut_attach.msg, testOut_attach.msg, testOut_noattach.msg.",
-    "implemented": false,
+    "implemented": true,
     "priority": 23,
-    "testFiles": []
+    "testFiles": [
+      "src/server/msg-to-eml/converter/__tests__/eml.test.ts:convertToEml with empty body handling"
+    ]
   }
 ]

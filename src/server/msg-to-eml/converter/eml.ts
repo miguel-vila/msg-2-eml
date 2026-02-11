@@ -207,6 +207,13 @@ export function convertToEml(parsed: ParsedMsg): string {
 
   // Check if we need multipart/alternative (HTML and/or calendar)
   const needsAlternative = hasHtml || hasCalendar;
+  const hasBody = parsed.body.length > 0;
+
+  if (!hasBody && !hasHtml && !hasCalendar && !hasAttachments) {
+    // No body content and no attachments - omit body MIME part entirely
+    eml += `\r\n`;
+    return eml;
+  }
 
   if (hasHtml && hasInlineAttachments && hasRegularAttachments) {
     // Case 1: multipart/mixed > multipart/related > (multipart/alternative + inline) + regular attachments
@@ -253,12 +260,14 @@ export function convertToEml(parsed: ParsedMsg): string {
     // Case 4: multipart/alternative only (HTML and/or calendar)
     eml += generateAlternativePart(altBoundary, parsed, hasHtml, hasCalendar);
   } else if (hasAttachments) {
-    // Case 5: multipart/mixed > text/plain + attachments
+    // Case 5: multipart/mixed > text/plain (if body present) + attachments
     eml += `Content-Type: multipart/mixed; boundary="${mixedBoundary}"\r\n`;
     eml += `\r\n`;
-    eml += `--${mixedBoundary}\r\n`;
-    eml += generateTextPart(parsed.body);
-    eml += `\r\n`;
+    if (hasBody) {
+      eml += `--${mixedBoundary}\r\n`;
+      eml += generateTextPart(parsed.body);
+      eml += `\r\n`;
+    }
     for (const att of parsed.attachments) {
       eml += `--${mixedBoundary}\r\n`;
       eml += generateAttachmentPart(att, false);
