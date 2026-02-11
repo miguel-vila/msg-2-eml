@@ -90,7 +90,3 @@ msg-2-eml/
 3. Compressed RTF bodies are decompressed and de-encapsulated to extract HTML/text
 4. The extracted data is assembled into a MIME-compliant EML structure
 5. Attachments are base64 encoded; embedded messages are recursively converted
-
-## License
-
-MIT
