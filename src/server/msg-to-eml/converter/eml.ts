@@ -20,6 +20,7 @@ const EXCLUDED_TRANSPORT_HEADERS = new Set([
   "references",
   "reply-to",
   "x-priority",
+  "sensitivity",
   "disposition-notification-to",
   "return-receipt-to",
   "thread-index",
@@ -151,6 +152,9 @@ export function convertToEml(parsed: ParsedMsg): string {
     }
     if (parsed.headers.priority !== undefined) {
       eml += `X-Priority: ${parsed.headers.priority}\r\n`;
+    }
+    if (parsed.headers.sensitivity) {
+      eml += `Sensitivity: ${parsed.headers.sensitivity}\r\n`;
     }
     if (parsed.headers.dispositionNotificationTo) {
       eml += `${foldHeader("Disposition-Notification-To", parsed.headers.dispositionNotificationTo)}\r\n`;

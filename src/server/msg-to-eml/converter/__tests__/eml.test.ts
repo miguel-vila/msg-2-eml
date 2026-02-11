@@ -1750,6 +1750,161 @@ From: sender@example.com`;
   });
 });
 
+describe("convertToEml with sensitivity header", () => {
+  it("should include Sensitivity: Personal header", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [{ name: "", email: "recipient@example.com", type: "to" as const }],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        sensitivity: "Personal" as const,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Sensitivity: Personal"), "Should have Sensitivity: Personal header");
+  });
+
+  it("should include Sensitivity: Private header", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        sensitivity: "Private" as const,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Sensitivity: Private"), "Should have Sensitivity: Private header");
+  });
+
+  it("should include Sensitivity: Company-Confidential header", () => {
+    const parsed = {
+      subject: "Confidential Report",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Confidential information",
+      attachments: [],
+      headers: {
+        sensitivity: "Company-Confidential" as const,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(
+      eml.includes("Sensitivity: Company-Confidential"),
+      "Should have Sensitivity: Company-Confidential header",
+    );
+  });
+
+  it("should not include Sensitivity header when not present", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(!eml.includes("Sensitivity:"), "Should not have Sensitivity header when not present");
+  });
+
+  it("should place Sensitivity header after X-Priority", () => {
+    const parsed = {
+      subject: "Urgent Private Message",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        priority: 1,
+        sensitivity: "Private" as const,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    const priorityIndex = eml.indexOf("X-Priority:");
+    const sensitivityIndex = eml.indexOf("Sensitivity:");
+    const contentTypeIndex = eml.indexOf("Content-Type:");
+
+    assert.ok(priorityIndex > 0, "Should have X-Priority header");
+    assert.ok(sensitivityIndex > 0, "Should have Sensitivity header");
+    assert.ok(priorityIndex < sensitivityIndex, "X-Priority should come before Sensitivity");
+    assert.ok(sensitivityIndex < contentTypeIndex, "Sensitivity should come before Content-Type");
+  });
+
+  it("should work with other message headers", () => {
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        messageId: "<test@example.com>",
+        priority: 2,
+        sensitivity: "Personal" as const,
+        dispositionNotificationTo: "sender@example.com",
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    assert.ok(eml.includes("Message-ID: <test@example.com>"), "Should have Message-ID");
+    assert.ok(eml.includes("X-Priority: 2"), "Should have X-Priority");
+    assert.ok(eml.includes("Sensitivity: Personal"), "Should have Sensitivity");
+    assert.ok(
+      eml.includes("Disposition-Notification-To: sender@example.com"),
+      "Should have Disposition-Notification-To",
+    );
+  });
+
+  it("should exclude Sensitivity from transport headers when we generate it", () => {
+    const transportHeaders = `Received: from mail.example.com by mx.example.org\r
+Sensitivity: Private\r
+From: sender@example.com`;
+
+    const parsed = {
+      subject: "Test",
+      from: "sender@example.com",
+      recipients: [],
+      date: new Date(),
+      body: "Test body",
+      attachments: [],
+      headers: {
+        sensitivity: "Company-Confidential" as const,
+        transportMessageHeaders: transportHeaders,
+      },
+    };
+
+    const eml = convertToEml(parsed);
+
+    // Should use our generated Sensitivity, not the one from transport
+    assert.ok(eml.includes("Sensitivity: Company-Confidential"), "Should use generated Sensitivity");
+
+    // Count Sensitivity occurrences - should have exactly one
+    const sensitivityMatches = eml.match(/Sensitivity:/g);
+    assert.strictEqual(sensitivityMatches?.length, 1, "Should have exactly one Sensitivity header");
+  });
+});
+
 describe("convertToEml with received-by headers", () => {
   it("should include Delivered-To header when transport headers are not available", () => {
     const parsed = {

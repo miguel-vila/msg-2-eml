@@ -18,6 +18,7 @@ export interface MessageHeaders {
   references?: string;
   replyTo?: string;
   priority?: number; // 1-5 scale (1=highest, 5=lowest)
+  sensitivity?: "Personal" | "Private" | "Company-Confidential"; // Email sensitivity/confidentiality level (Sensitivity header)
   dispositionNotificationTo?: string; // For read receipt requests
   returnReceiptTo?: string; // For delivery receipt requests
   transportMessageHeaders?: string; // Original transport headers (Received, DKIM, SPF, etc.)

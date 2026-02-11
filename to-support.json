@@ -160,9 +160,12 @@
   {
     "id": "sensitivity-header",
     "description": "Map PidTagSensitivity (0x0036) to the Sensitivity MIME header. Values: 0=Normal (omit header), 1='Personal', 2='Private', 3='Company-Confidential'. This preserves email confidentiality classification from Outlook/Exchange.",
-    "implemented": false,
+    "implemented": true,
     "priority": 16,
-    "testFiles": []
+    "testFiles": [
+      "src/server/msg-to-eml/parsing/__tests__/sensitivity.test.ts:mapSensitivity",
+      "src/server/msg-to-eml/converter/__tests__/eml.test.ts:convertToEml with sensitivity header"
+    ]
   },
   {
     "id": "mailing-list-headers",

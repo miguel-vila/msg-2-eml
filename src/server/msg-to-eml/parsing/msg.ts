@@ -22,6 +22,7 @@ import {
   PidTagReceivedBySmtpAddress,
   PidTagReplyRecipientNames,
   PidTagRtfCompressed,
+  PidTagSensitivity,
   PidTagSubject,
   PidTagTransportMessageHeaders,
 } from "msg-parser";
@@ -32,6 +33,27 @@ import type { Attachment, CalendarEvent, MessageHeaders, ParsedMsg } from "../ty
 import { parseAttachment, parseEmbeddedMessage } from "./attachment.js";
 import { parseRecipient } from "./recipient.js";
 import { extractSenderInfo, formatSender } from "./sender.js";
+
+/**
+ * Maps PidTagSensitivity value to Sensitivity header string.
+ * Values: 0=Normal (returns undefined, header should be omitted),
+ * 1='Personal', 2='Private', 3='Company-Confidential'
+ */
+export function mapSensitivity(
+  sensitivityValue: number | undefined,
+): "Personal" | "Private" | "Company-Confidential" | undefined {
+  switch (sensitivityValue) {
+    case 1:
+      return "Personal";
+    case 2:
+      return "Private";
+    case 3:
+      return "Company-Confidential";
+    default:
+      // 0 (Normal) or undefined - omit the header
+      return undefined;
+  }
+}
 
 export function parseMsgFromMsg(msg: Msg, msgToEmlFromMsg: (msg: Msg) => string): ParsedMsg {
   const subject = msg.getProperty<string>(PidTagSubject) || "(No Subject)";
@@ -82,12 +104,18 @@ export function parseMsgFromMsg(msg: Msg, msgToEmlFromMsg: (msg: Msg) => string)
   const importance = msg.getProperty<number>(PidTagImportance);
   const xPriority = mapToXPriority(priority, importance);
 
+  // Extract sensitivity level (PidTagSensitivity)
+  // Values: 0=Normal (omit header), 1='Personal', 2='Private', 3='Company-Confidential'
+  const sensitivityValue = msg.getProperty<number>(PidTagSensitivity);
+  const sensitivity = mapSensitivity(sensitivityValue);
+
   const headers: MessageHeaders = {};
   if (messageId) headers.messageId = messageId;
   if (inReplyTo) headers.inReplyTo = inReplyTo;
   if (references) headers.references = references;
   if (replyTo) headers.replyTo = replyTo;
   if (xPriority !== undefined) headers.priority = xPriority;
+  if (sensitivity) headers.sensitivity = sensitivity;
 
   // Check for read receipt and delivery receipt requests
   const readReceiptRequested = msg.getProperty<boolean>(PidTagReadReceiptRequested);
